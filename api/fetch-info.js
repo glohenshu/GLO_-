@@ -9,11 +9,18 @@ export default async function handler(req, res) {
     return;
   }
 
-  const result = {
-    kintone: { status: 'error', message: '', data: null },
-    publication: { status: 'error', message: '', data: null },
-    sheet: { status: 'error', message: '', rows: null },
-  };
+const result = {
+  kintone: { status: 'error', message: '', data: null },
+  publication: { status: 'error', message: '', data: null },
+  sheet: { status: 'error', message: '', rows: null },
+
+  links: {
+    kintone: '',
+    publication: '',
+    articleSheet: '',
+    mediaweaver: '',
+  },
+};
 
   // ---------- 1. kintone「GLO連載情報」 ----------
   let record = null;
@@ -31,18 +38,39 @@ export default async function handler(req, res) {
     if (!json.records || json.records.length === 0) {
       throw new Error(`カテゴリID「${code}」のレコードが見つかりません`);
     }
-    const f = json.records[0];
-    record = {
-      bookTitle: f['書籍タイトル']?.value ?? '',
-      categoryId: f['カテゴリID']?.value ?? '',
-      firstDelivery: f['第1回配信日時']?.value ?? '',
-      pubUrl: f['出版実績URL']?.value ?? '',
-      productionNo: f['制作No']?.value ?? '',
-    };
-    result.kintone = { status: 'ok', message: '', data: record };
+const f = json.records[0];
+
+const recordId = f['$id']?.value ?? '';
+
+record = {
+  bookTitle: f['書籍タイトル']?.value ?? '',
+  categoryId: f['カテゴリID']?.value ?? '',
+  firstDelivery: f['第1回配信日時']?.value ?? '',
+  pubUrl: f['出版実績URL']?.value ?? '',
+  productionNo: f['制作No']?.value ?? '',
+  recordId,
+};
+
+result.kintone = { status: 'ok', message: '', data: record };
+
+// 確認用リンク
+if (recordId) {
+  result.links.kintone =
+    `${base}/k/${appId}/show#record=${recordId}`;
+}
+
+result.links.publication = record.pubUrl || '';
   } catch (e) {
     result.kintone.message = String(e.message || e);
   }
+
+result.links.articleSheet =
+  process.env.ARTICLE_SHEET_URL || '';
+
+result.links.mediaweaver =
+  process.env.MEDIAWEAVER_URL || '';
+
+res.status(200).json(result);
 
   // ---------- 2. 出版実績ページ ----------
   try {

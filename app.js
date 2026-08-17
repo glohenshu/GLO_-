@@ -154,42 +154,12 @@ function setQuickLink(id, url) {
 }
 
 function renderQuickLinks(data) {
-  const rec = state.record || {};
-  const pub = state.pub || {};
-  const sheet = data?.sheet?.data || data?.sheet || {};
+  const links = data.links || {};
 
-  // API側ですでにURLを返している場合は自動的に使用する。
-  // URLが存在しない場合はボタンを無効状態にする。
-  setQuickLink(
-    'link-kintone',
-    rec.recordUrl ||
-    rec.kintoneUrl ||
-    ''
-  );
-
-  setQuickLink(
-    'link-publication',
-    pub.url ||
-    pub.pageUrl ||
-    pub.sourceUrl ||
-    pub.publicationUrl ||
-    ''
-  );
-
-  setQuickLink(
-    'link-article-sheet',
-    sheet.sheetUrl ||
-    sheet.sourceUrl ||
-    sheet.url ||
-    ''
-  );
-
-  setQuickLink(
-    'link-mediaweaver',
-    rec.mediaweaverUrl ||
-    rec.mediaWeaverUrl ||
-    ''
-  );
+  setQuickLink('link-kintone', links.kintone);
+  setQuickLink('link-publication', links.publication);
+  setQuickLink('link-article-sheet', links.articleSheet);
+  setQuickLink('link-mediaweaver', links.mediaweaver);
 }
 
 document.addEventListener('click', (e) => {
