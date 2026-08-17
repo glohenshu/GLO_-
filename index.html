@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新連載作成アシスタント</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <h1>新連載作成アシスタント <span class="ver">Ver.1</span></h1>
+
+    <div class="search-row">
+      <label for="code-input">カテゴリコード</label>
+      <input id="code-input" type="text" placeholder="gr1944" autocomplete="off" spellcheck="false">
+      <button id="fetch-btn" class="primary">情報取得</button>
+      <span id="fetch-status" class="fetch-status" role="status"></span>
+    </div>
+
+    <div id="basic-info" class="basic-info" hidden>
+      <p class="book-title" id="info-title"></p>
+      <p class="meta">
+        <span>カテゴリID：<b id="info-category"></b></span>
+        <span>制作No：<b id="info-prodno"></b></span>
+        <span>第1回配信日時：<b id="info-delivery"></b></span>
+      </p>
+      <p class="meta">
+        <span>出版実績：<b id="info-pub-status"></b></span>
+        <span>記事下リンク：<b id="info-sheet-status"></b></span>
+        <span class="temp-title">仮記事タイトル：<code>aaa</code>
+          <button class="copy mini" data-copy-text="aaa">コピー</button></span>
+      </p>
+    </div>
+
+    <nav class="tabs" id="tabs">
+      <button data-tab="tab1" class="active">① 著者登録</button>
+      <button data-tab="tab2">② 書籍登録</button>
+      <button data-tab="tab3">③ カテゴリ</button>
+      <button data-tab="tab4">④ サマリー作成</button>
+      <button data-tab="tab5">⑤ 本文テンプレート</button>
+    </nav>
+  </div>
+</header>
+
+<main class="content">
+
+  <!-- ① 著者登録 -->
+  <section id="tab1" class="tab-panel active">
+    <div class="panel-head">
+      <h2>著者登録</h2>
+      <button id="add-author" class="ghost">＋ 著者を追加</button>
+    </div>
+    <p class="hint">出版実績「■著者紹介」から取得した著者情報です。取得できなかった場合は手入力してください。著者名かなは保存されません。</p>
+    <div id="author-cards"></div>
+  </section>
+
+  <!-- ② 書籍登録 -->
+  <section id="tab2" class="tab-panel">
+    <h2>書籍登録</h2>
+    <p class="hint">MediaWeaverの書籍登録画面へ、上から順にコピーして貼り付けてください。</p>
+    <div class="field-list" id="book-fields"></div>
+  </section>
+
+  <!-- ③ カテゴリ -->
+  <section id="tab3" class="tab-panel">
+    <h2>カテゴリ説明本文</h2>
+    <p class="hint">出版実績ページのタイトル直下キャッチを取得しています。必要に応じて編集してください。</p>
+    <textarea id="catch-copy" rows="5" placeholder="取得できませんでした。手入力してください。"></textarea>
+    <div class="btn-row">
+      <button class="copy" data-copy-target="catch-copy">カテゴリ説明をコピー</button>
+    </div>
+
+    <div id="debug-wrap" hidden>
+      <label class="block-label" for="debug-text">解析デバッグ（出版実績ページから抽出したテキスト）</label>
+      <p class="hint">解析ロジック調整用の表示です。取得内容がずれている場合、この内容を開発担当へ共有してください。</p>
+      <textarea id="debug-text" rows="10" readonly></textarea>
+      <div class="btn-row">
+        <button class="copy" data-copy-target="debug-text">デバッグテキストをコピー</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 解析デバッグ（カテゴリタブ内に表示） -->
+  <!-- ④ サマリー作成 -->
+  <section id="tab4" class="tab-panel">
+    <h2>サマリー作成</h2>
+    <p class="hint">「内容紹介」全文をそのまま表示しています。不要部分を削除・修正してサマリーを作成してください（目安200字・改行なし）。</p>
+
+    <label class="block-label" for="summary-body">本文（編集用）</label>
+    <textarea id="summary-body" rows="8"></textarea>
+    <p class="char-count">本文：<b id="count-body">0</b>文字</p>
+
+    <fieldset class="source-type">
+      <legend>出典タイプ</legend>
+      <label><input type="radio" name="source-type" value="book" checked> 書籍</label>
+      <label><input type="radio" name="source-type" value="novel"> 小説</label>
+      <label><input type="radio" name="source-type" value="gr-contest"> 幻冬舎ルネッサンス主催コンテスト</label>
+      <label><input type="radio" name="source-type" value="glo-contest"> GLO主催コンテスト</label>
+      <label><input type="radio" name="source-type" value="original"> 書き下ろし小説</label>
+    </fieldset>
+
+    <div id="contest-fields" class="contest-fields" hidden>
+      <label>コンテスト名<input type="text" id="contest-name" placeholder="例：第◯回◯◯コンテスト"></label>
+      <label>賞<input type="text" id="contest-prize" placeholder="例：優秀"></label>
+    </div>
+
+    <label class="block-label">完成サマリー（本文＋出典表記）</label>
+    <textarea id="summary-final" rows="6" readonly></textarea>
+    <p class="char-count">完成サマリー：<b id="count-final">0</b>文字 <span class="note">（200字は目安です）</span></p>
+    <div class="btn-row">
+      <button class="copy" data-copy-target="summary-final">完成サマリーをコピー</button>
+    </div>
+  </section>
+
+  <!-- ⑤ 本文テンプレート -->
+  <section id="tab5" class="tab-panel">
+    <h2>本文テンプレート</h2>
+    <div class="template-status">
+      <p>第1回配信日時：<b id="tpl-delivery">—</b></p>
+      <p>記事下リンク対象：<b id="tpl-period">—</b></p>
+      <p>C列取得：<b id="tpl-c-status">—</b></p>
+    </div>
+
+    <div id="tpl-manual-wrap" hidden>
+      <label class="block-label" for="tpl-manual">記事下HTML（手動貼り付け）</label>
+      <textarea id="tpl-manual" rows="6" placeholder="該当期間が見つからなかった場合は、記事下HTMLをここへ貼り付けてください。"></textarea>
+    </div>
+
+    <label class="block-label" for="tpl-output">完成HTML</label>
+    <textarea id="tpl-output" rows="12" readonly></textarea>
+    <div class="btn-row">
+      <button class="copy" data-copy-target="tpl-output">完成HTMLをコピー</button>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

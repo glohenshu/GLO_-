@@ -1,0 +1,358 @@
+:root {
+  --bg: #F6F7F5;
+  --panel: #FFFFFF;
+  --ink: #23231F;
+  --sub: #6E6E66;
+  --line: #DFE0DA;
+  --accent: #1E6B52;      /* GLOツールの基調色：深緑 */
+  --accent-soft: #E7F0EC;
+  --warn: #B4552D;
+  --code-bg: #F1F2EE;
+  --radius: 8px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ---- 上部固定エリア ---- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 14px 20px 0;
+}
+
+h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+h1 .ver {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--sub);
+  margin-left: 6px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.search-row label { color: var(--sub); font-size: 13px; }
+
+#code-input {
+  width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.fetch-status { font-size: 12px; color: var(--sub); }
+.fetch-status.error { color: var(--warn); }
+
+.basic-info {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+}
+
+.book-title { font-size: 16px; font-weight: 700; }
+
+.meta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--sub);
+  margin-top: 4px;
+}
+
+.meta b { color: var(--ink); font-weight: 600; }
+.meta .ok { color: var(--accent); }
+.meta .ng { color: var(--warn); }
+
+.temp-title code {
+  background: var(--panel);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+
+/* ---- タブ ---- */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.tabs button {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  color: var(--sub);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.tabs button.active {
+  color: var(--accent);
+  font-weight: 700;
+  border-bottom-color: var(--accent);
+}
+
+.tabs button:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---- 本文 ---- */
+.content {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 22px 20px 80px;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+h2 { font-size: 16px; margin-bottom: 6px; }
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hint { font-size: 12.5px; color: var(--sub); margin-bottom: 14px; }
+.note { font-size: 12px; color: var(--sub); }
+
+textarea, input[type="text"] {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  font-family: inherit;
+  background: var(--panel);
+  line-height: 1.7;
+}
+
+textarea { resize: vertical; }
+textarea[readonly] { background: var(--code-bg); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+.block-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin: 16px 0 5px;
+}
+
+.btn-row { margin-top: 10px; }
+
+button.primary, button.copy, button.ghost {
+  appearance: none;
+  cursor: pointer;
+  border-radius: var(--radius);
+  font-size: 13px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+button.primary:disabled { opacity: 0.5; cursor: default; }
+
+button.copy {
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+button.copy.mini { padding: 2px 8px; font-size: 11px; margin-left: 4px; }
+
+button.ghost {
+  background: none;
+  border-color: var(--line);
+  color: var(--sub);
+}
+
+/* ---- フィールドリスト（書籍登録） ---- */
+.field-list .field {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-list .field .fname { font-size: 13px; font-weight: 600; padding-top: 9px; }
+
+/* ---- 著者カード ---- */
+.author-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.author-card .card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.author-card .card-head h3 { font-size: 14px; color: var(--accent); }
+
+.author-card .remove {
+  background: none;
+  border: none;
+  color: var(--sub);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.author-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.author-grid label, .link-row label, .contest-fields label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.author-grid input, .link-row input, .contest-fields input { margin-top: 4px; }
+
+.sns-block { margin-top: 14px; }
+
+.sns-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+
+.sns-row .sns-name { width: 130px; font-size: 13px; }
+.sns-row input[type="text"] { flex: 1; min-width: 220px; }
+
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); cursor: pointer; }
+
+.link-row {
+  display: grid;
+  grid-template-columns: 1fr 2fr auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.link-row .remove-link {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--sub);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.output-block { margin-top: 16px; }
+
+/* ---- サマリー ---- */
+.char-count { font-size: 12.5px; color: var(--sub); margin-top: 4px; }
+.char-count b { color: var(--ink); }
+
+.source-type {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-top: 16px;
+  background: var(--panel);
+}
+
+.source-type legend { font-size: 12.5px; font-weight: 600; padding: 0 6px; }
+.source-type label { display: block; font-size: 13.5px; padding: 3px 0; cursor: pointer; }
+
+.contest-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* ---- テンプレート ---- */
+.template-status {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+/* ---- トースト ---- */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translate(-50%, 20px);
+  background: var(--ink);
+  color: #fff;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .author-grid, .contest-fields { grid-template-columns: 1fr; }
+  .field-list .field { grid-template-columns: 1fr; }
+  .link-row { grid-template-columns: 1fr; }
+}
