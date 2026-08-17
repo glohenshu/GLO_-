@@ -1,4 +1,4 @@
 # GLO\_-
 
-glohenshuの新しいリポジトリです。
+glohenshuの新しいリポジトリです。。。
 
