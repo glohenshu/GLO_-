@@ -138,10 +138,7 @@ export default async function handler(req, res) {
     result.publication = {
       status: 'ok',
       message: '',
-      data: parsePublicationPage(
-        html,
-        record?.bookTitle || ''
-      ),
+      data: parsePublicationPage(html),
     };
 
   } catch (e) {
@@ -364,10 +361,31 @@ function sectionAfter(text, marker) {
 // 出版実績ページ解析
 // ============================================================
 
-function parsePublicationPage(
-  html,
-  bookTitle
-) {
+function extractMainH1(html) {
+  const m = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
+
+  if (!m) {
+    return {
+      title: '',
+      afterHtml: '',
+    };
+  }
+
+  const fullMatch = m[0];
+  const matchIndex = m.index ?? html.indexOf(fullMatch);
+
+  return {
+    title: htmlToText(m[1]).replace(/\s+/g, ' ').trim(),
+    afterHtml: html.slice(matchIndex + fullMatch.length),
+  };
+}
+
+
+// ============================================================
+// 出版実績ページ解析
+// ============================================================
+
+function parsePublicationPage(html) {
   const text = htmlToText(html);
 
   // ------------------------------------------------------------
@@ -446,167 +464,105 @@ function parsePublicationPage(
   // ------------------------------------------------------------
   // タイトル直下キャッチ
   //
-  // ページ構造：
-  // パンくず
-  // ↓
-  // h1タイトル
-  // ↓
-  // サブタイトル
-  // ↓
-  // キャッチ
-  // ↓
-  // ジャンル
+  // 出版実績ページは、kintoneの書籍タイトルではなく、
+  // kintoneに登録されている「出版実績URL」から取得した
+  // そのページ自身の <h1> を起点に解析する。
   //
-  // 「ジャンル」より手前で最後に出現するタイトルを
-  // 起点に、間のテキストからキャッチを抽出する。
+  // h1終了直後 ～ 「ジャンル」直前のテキストを候補とし、
+  // 「書籍を購入...」等を除外する。
   //
-  // 文末記号で終わらない先頭行は
-  // サブタイトルとみなして除外する。
+  // 文末記号で終わらない先頭行が複数ある場合は、
+  // サブタイトル等とみなして除外する。
   // ------------------------------------------------------------
 
   let catchCopy = '';
 
-  if (bookTitle) {
+  const h1 = extractMainH1(html);
+
+  if (h1.afterHtml) {
+    const afterH1Text = htmlToText(h1.afterHtml);
+
     const genreIdx =
-      text.search(
-        /\nジャンル\s*\n/
+      afterH1Text.search(
+        /(^|\n)ジャンル\s*(\n|$)/
       );
 
     if (genreIdx !== -1) {
-      let ti = -1;
-      let from = 0;
-
-      while (true) {
-        const i =
-          text.indexOf(
-            bookTitle,
-            from
+      let lines =
+        afterH1Text
+          .slice(0, genreIdx)
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(
+            (l) =>
+              l &&
+              !/^書籍を購/.test(l)
           );
 
-        if (
-          i === -1 ||
-          i >= genreIdx
-        ) {
-          break;
-        }
-
-        ti = i;
-        from =
-          i + bookTitle.length;
+      while (
+        lines.length > 1 &&
+        !/[。．！？!?…」』]$/.test(
+          lines[0]
+        )
+      ) {
+        lines.shift();
       }
 
-      if (ti !== -1) {
-        let lines =
-          text
-            .slice(
-              ti + bookTitle.length,
-              genreIdx
-            )
-            .split('\n')
-            .map((l) => l.trim())
-            .filter(
-              (l) =>
-                l &&
-                !/^書籍を購/.test(l)
-            );
-
-        while (
-          lines.length > 1 &&
-          !/[。．！？!?…」』]$/.test(
-            lines[0]
-          )
-        ) {
-          lines.shift();
-        }
-
-        catchCopy =
-          lines
-            .join('\n')
-            .slice(0, 400)
-            .trim();
-      }
+      catchCopy =
+        lines
+          .join('\n')
+          .slice(0, 400)
+          .trim();
     }
 
 
     // ----------------------------------------------------------
     // フォールバック：
-    // 従来方式
-    // タイトル直後から■等の手前まで
+    // 「ジャンル」が見つからない場合も、h1直後から
+    // 本文外マーカーまでの範囲でキャッチ候補を探す。
     // ----------------------------------------------------------
 
     if (!catchCopy) {
-      let from = 0;
+      let chunk =
+        cutAtStops(afterH1Text);
 
-      for (
-        let k = 0;
-        k < 6;
-        k++
-      ) {
-        const i =
-          text.indexOf(
-            bookTitle,
-            from
-          );
+      const stop =
+        chunk.search(
+          /■|ジャンル|著者名?[：:]/
+        );
 
-        if (i === -1) {
-          break;
-        }
-
-        from =
-          i + bookTitle.length;
-
-        let chunk =
-          cutAtStops(
-            text.slice(from)
-          );
-
-        const stop =
-          chunk.search(
-            /■|ジャンル|著者名?[：:]/
-          );
-
-        if (stop !== -1) {
-          chunk =
-            chunk.slice(
-              0,
-              stop
-            );
-        }
-
+      if (stop !== -1) {
         chunk =
-          chunk.trim();
-
-        if (!chunk) {
-          continue;
-        }
-
-        if (
-          chunk.startsWith('|') ||
-          chunk.startsWith('｜')
-        ) {
-          continue;
-        }
-
-        if (
-          chunk.startsWith(
-            bookTitle
-          )
-        ) {
-          continue;
-        }
-
-        catchCopy =
-          chunk
-            .split('\n\n')
-            .slice(0, 3)
-            .join('\n\n')
-            .slice(0, 400)
-            .trim();
-
-        if (catchCopy) {
-          break;
-        }
+          chunk.slice(
+            0,
+            stop
+          );
       }
+
+      let lines =
+        chunk
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(
+            (l) =>
+              l &&
+              !/^書籍を購/.test(l)
+          );
+
+      while (
+        lines.length > 1 &&
+        !/[。．！？!?…」』]$/.test(
+          lines[0]
+        )
+      ) {
+        lines.shift();
+      }
+
+      catchCopy =
+        lines
+          .join('\n')
+          .slice(0, 400)
+          .trim();
     }
   }
 
