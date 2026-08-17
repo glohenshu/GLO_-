@@ -479,10 +479,16 @@ const SOURCE_TEMPLATES = {
 };
 
 function renderSummaryTab() {
-  $('summary-body').value = (state.pub?.intro || '').trim();
+  const intro = String(state.pub?.intro || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('');
+
+  $('summary-body').value = intro;
   updateSummaryFinal();
 }
-
 function currentSourceType() {
   return document.querySelector('input[name="source-type"]:checked')?.value || 'book';
 }

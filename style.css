@@ -33,7 +33,7 @@ body {
 .topbar-inner {
   max-width: 920px;
   margin: 0 auto;
-  padding: 14px 20px 0;
+  padding: 10px 20px 0;
 }
 
 h1 {
@@ -52,8 +52,8 @@ h1 .ver {
 .search-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 7px;
   flex-wrap: wrap;
 }
 
@@ -61,7 +61,7 @@ h1 .ver {
 
 #code-input {
   width: 160px;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   font-size: 14px;
@@ -72,21 +72,22 @@ h1 .ver {
 .fetch-status.error { color: var(--warn); }
 
 .basic-info {
-  margin-top: 12px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  padding: 8px 12px;
   background: var(--accent-soft);
   border-radius: var(--radius);
 }
 
-.book-title { font-size: 16px; font-weight: 700; }
+.book-title { font-size: 15px; font-weight: 700; line-height: 1.4; }
 
 .meta {
   display: flex;
-  gap: 18px;
+  gap: 4px 16px;
   flex-wrap: wrap;
   font-size: 12.5px;
+  line-height: 1.45;
   color: var(--sub);
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .meta b { color: var(--ink); font-weight: 600; }
@@ -104,7 +105,7 @@ h1 .ver {
 .tabs {
   display: flex;
   gap: 2px;
-  margin-top: 14px;
+  margin-top: 8px;
   overflow-x: auto;
 }
 
@@ -112,7 +113,7 @@ h1 .ver {
   appearance: none;
   border: none;
   background: none;
-  padding: 10px 14px;
+  padding: 7px 12px;
   font-size: 13.5px;
   color: var(--sub);
   cursor: pointer;
@@ -362,16 +363,17 @@ button.ghost {
    ============================================================ */
 
 .quick-links {
-  margin-top: 10px;
-  margin-bottom: 14px;
+  margin-top: 6px;
+  margin-bottom: 8px;
   border: 1px solid #d9e4e1;
   border-radius: 8px;
   background: #fff;
 }
 
 .quick-links summary {
-  padding: 9px 12px;
-  font-size: 13px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
   font-weight: 700;
   color: #174f43;
   cursor: pointer;
@@ -383,21 +385,21 @@ button.ghost {
 }
 
 .quick-links-content {
-  padding: 4px 12px 12px;
+  padding: 3px 10px 8px;
   border-top: 1px solid #e5ecea;
 }
 
 .quick-links-group {
-  padding-top: 10px;
+  padding-top: 7px;
 }
 
 .quick-links-group + .quick-links-group {
-  margin-top: 10px;
+  margin-top: 7px;
   border-top: 1px solid #e5ecea;
 }
 
 .quick-links-label {
-  margin-bottom: 7px;
+  margin-bottom: 5px;
   font-size: 12px;
   font-weight: 700;
   color: #687572;
@@ -406,13 +408,13 @@ button.ghost {
 .quick-links-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 5px;
 }
 
 .quick-link {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border: 1px solid #b9cbc6;
   border-radius: 5px;
   background: #fff;
