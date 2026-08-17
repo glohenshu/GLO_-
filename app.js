@@ -206,34 +206,87 @@ function renderBasicInfo(data) {
 // ■著者紹介ブロックから著者を分割（名前行＝「名前（かな）」形式を区切りとみなす）
 function buildAuthorsFromPub() {
   state.authors = [];
-  const block = state.pub?.authorBlock || '';
-  const lines = block.replace(/\r\n?/g, '\n').split('\n');
 
-  const isNameLine = (l) => /^[^\s].{0,50}（[^）]+）\s*$/.test(l.trim()) && l.trim().length <= 60;
+  const block = state.pub?.authorBlock || '';
+  const lines = block
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l !== '');
+
+  const createAuthor = (name = '', kana = '') => ({
+    name,
+    kana,
+    intro: [],
+    sns: {
+      x: { on: false, url: '' },
+      instagram: { on: false, url: '' },
+      facebook: { on: false, url: '' },
+    },
+    links: [],
+  });
+
+  // かな欄として許可する文字
+  const isKanaText = (text) => /^[ぁ-ゖァ-ヶー・･ 　]+$/.test(text.trim());
+
+  // 著者名行の厳密判定
+  const parseNameLine = (line) => {
+    const m = line.match(/^(.+?)（([^）]+)）\s*$/);
+    if (!m) return null;
+
+    const name = m[1].trim();
+    const kana = m[2].trim();
+
+    if (!name || !kana) return null;
+
+    // 年号や本文を弾く
+    if (/^\d/.test(name)) return null;
+
+    // 括弧内が「かな」っぽくないものは弾く
+    if (!isKanaText(kana)) return null;
+
+    // 長すぎるものも弾く
+    if (name.length > 40 || kana.length > 40) return null;
+
+    return { name, kana };
+  };
 
   let current = null;
-  for (const raw of lines) {
-    const line = raw.trimEnd();
-    if (isNameLine(line) || (current === null && line.trim() !== '')) {
-      if (current) state.authors.push(current);
-      const m = line.trim().match(/^(.*?)（([^）]+)）\s*$/);
-      current = {
-        name: m ? m[1].trim() : line.trim(),
-        kana: m ? m[2].trim() : '',
-        intro: [],
-        sns: { x: { on: false, url: '' }, instagram: { on: false, url: '' }, facebook: { on: false, url: '' } },
-        links: [],
-      };
-    } else if (current) {
-      current.intro.push(raw);
+
+  for (const line of lines) {
+    const parsed = parseNameLine(line);
+
+    if (parsed) {
+      if (current) {
+        current.intro = current.intro.join('\n').trim();
+        state.authors.push(current);
+      }
+
+      current = createAuthor(parsed.name, parsed.kana);
+      continue;
+    }
+
+    if (current) {
+      current.intro.push(line);
     }
   }
-  if (current) state.authors.push(current);
-  state.authors.forEach((a) => { a.intro = a.intro.join('\n').trim(); });
 
-  if (state.authors.length === 0) state.authors.push(emptyAuthor());
+  if (current) {
+    current.intro = current.intro.join('\n').trim();
+    state.authors.push(current);
+  }
+
+  // 著者名行が1件も見つからなかった場合の保険
+  if (state.authors.length === 0) {
+    if (block.trim()) {
+      const a = emptyAuthor();
+      a.intro = block.trim();
+      state.authors.push(a);
+    } else {
+      state.authors.push(emptyAuthor());
+    }
+  }
 }
-
 function emptyAuthor() {
   return {
     name: '', kana: '', intro: '',
