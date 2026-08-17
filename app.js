@@ -121,6 +121,7 @@ async function fetchInfo() {
 
 function renderAll(data) {
   renderBasicInfo(data);
+  renderQuickLinks(data);
   buildAuthorsFromPub();
   renderAuthorCards();
   renderBookFields();
@@ -128,6 +129,76 @@ function renderAll(data) {
   renderSummaryTab();
   renderTemplateTab();
 }
+
+// ============================================================
+// 確認用リンク
+// ============================================================
+
+function setQuickLink(id, url) {
+  const el = $(id);
+  if (!el) return;
+
+  const value = String(url || '').trim();
+
+  if (value) {
+    el.href = value;
+    el.classList.remove('disabled');
+    el.setAttribute('aria-disabled', 'false');
+    el.removeAttribute('title');
+  } else {
+    el.href = '#';
+    el.classList.add('disabled');
+    el.setAttribute('aria-disabled', 'true');
+    el.title = 'リンク先URLが未設定です';
+  }
+}
+
+function renderQuickLinks(data) {
+  const rec = state.record || {};
+  const pub = state.pub || {};
+  const sheet = data?.sheet?.data || data?.sheet || {};
+
+  // API側ですでにURLを返している場合は自動的に使用する。
+  // URLが存在しない場合はボタンを無効状態にする。
+  setQuickLink(
+    'link-kintone',
+    rec.recordUrl ||
+    rec.kintoneUrl ||
+    ''
+  );
+
+  setQuickLink(
+    'link-publication',
+    pub.url ||
+    pub.pageUrl ||
+    pub.sourceUrl ||
+    pub.publicationUrl ||
+    ''
+  );
+
+  setQuickLink(
+    'link-article-sheet',
+    sheet.sheetUrl ||
+    sheet.sourceUrl ||
+    sheet.url ||
+    ''
+  );
+
+  setQuickLink(
+    'link-mediaweaver',
+    rec.mediaweaverUrl ||
+    rec.mediaWeaverUrl ||
+    ''
+  );
+}
+
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a.quick-link.disabled');
+  if (!link) return;
+
+  e.preventDefault();
+  showToast('このリンクはまだ設定されていません');
+});
 
 // ============================================================
 // 上部基本情報

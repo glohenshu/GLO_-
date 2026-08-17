@@ -356,3 +356,90 @@ button.ghost {
   .field-list .field { grid-template-columns: 1fr; }
   .link-row { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   確認用リンク
+   ============================================================ */
+
+.quick-links {
+  margin-top: 16px;
+  margin-bottom: 20px;
+  padding: 16px 18px;
+  background: #f7faf9;
+  border: 1px solid #d9e4e1;
+  border-radius: 10px;
+}
+
+.quick-links-head {
+  margin-bottom: 14px;
+}
+
+.quick-links-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.quick-links-group + .quick-links-group {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #dde5e3;
+}
+
+.quick-links-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #52605d;
+}
+
+.quick-links-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid #b9cbc6;
+  border-radius: 6px;
+  background: #fff;
+  color: #174f43;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.quick-link:hover {
+  background: #edf6f3;
+  border-color: #7fa89d;
+}
+
+.quick-link.disabled {
+  color: #999;
+  background: #f1f1f1;
+  border-color: #ddd;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.quick-link.disabled:hover {
+  background: #f1f1f1;
+  border-color: #ddd;
+}
+
+@media (max-width: 700px) {
+  .quick-links-buttons {
+    flex-direction: column;
+  }
+
+  .quick-link {
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
