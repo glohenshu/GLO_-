@@ -362,57 +362,64 @@ button.ghost {
    ============================================================ */
 
 .quick-links {
-  margin-top: 16px;
-  margin-bottom: 20px;
-  padding: 16px 18px;
-  background: #f7faf9;
-  border: 1px solid #d9e4e1;
-  border-radius: 10px;
-}
-
-.quick-links-head {
+  margin-top: 10px;
   margin-bottom: 14px;
+  border: 1px solid #d9e4e1;
+  border-radius: 8px;
+  background: #fff;
 }
 
-.quick-links-head h2 {
-  margin: 0;
-  font-size: 16px;
+.quick-links summary {
+  padding: 9px 12px;
+  font-size: 13px;
   font-weight: 700;
+  color: #174f43;
+  cursor: pointer;
+  user-select: none;
+}
+
+.quick-links summary:hover {
+  background: #f4f8f7;
+}
+
+.quick-links-content {
+  padding: 4px 12px 12px;
+  border-top: 1px solid #e5ecea;
+}
+
+.quick-links-group {
+  padding-top: 10px;
 }
 
 .quick-links-group + .quick-links-group {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid #dde5e3;
+  margin-top: 10px;
+  border-top: 1px solid #e5ecea;
 }
 
 .quick-links-label {
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 7px;
+  font-size: 12px;
   font-weight: 700;
-  color: #52605d;
+  color: #687572;
 }
 
 .quick-links-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
 }
 
 .quick-link {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border: 1px solid #b9cbc6;
-  border-radius: 6px;
+  border-radius: 5px;
   background: #fff;
   color: #174f43;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-decoration: none;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .quick-link:hover {
@@ -425,21 +432,5 @@ button.ghost {
   background: #f1f1f1;
   border-color: #ddd;
   cursor: not-allowed;
-  opacity: 0.65;
-}
-
-.quick-link.disabled:hover {
-  background: #f1f1f1;
-  border-color: #ddd;
-}
-
-@media (max-width: 700px) {
-  .quick-links-buttons {
-    flex-direction: column;
-  }
-
-  .quick-link {
-    width: 100%;
-    box-sizing: border-box;
-  }
+  opacity: 0.6;
 }
