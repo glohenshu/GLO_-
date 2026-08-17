@@ -22,6 +22,16 @@ function textToBr(text) {
   return lines.map((l, i) => (i < lines.length - 1 ? l + '<br>' : l)).join('\n');
 }
 
+// 空行を除去して、各行を<br>でつなぐ
+function textToBrCompact(text) {
+  const lines = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+
+  return lines.join('<br>\n');
+}
+
 // kintoneのDATETIME値 → 日本時間の {y,m,d,hh,mm}
 function parseKintoneDatetime(v) {
   if (!v) return null;
@@ -461,7 +471,7 @@ function syncAuthorDependents() {
 const BOOK_FIELD_DEFS = [
   { key: 'author', label: '著者', calc: () => joinedAuthorNames().replace(/ /g, '') },
   { key: 'dispAuthor', label: '表示用著者名', calc: () => joinedAuthorNames() },
-  { key: 'intro', label: '紹介文', textarea: true, calc: () => textToBr(state.pub?.intro || '') },
+  { key: 'intro', label: '紹介文', textarea: true, calc: () => textToBrCompact(state.pub?.intro || '') },
   { key: 'isbn', label: 'ISBN', calc: () => state.pub?.isbn || '' },
   { key: 'format', label: '判型', calc: () => splitFormat().format },
   { key: 'pages', label: 'ページ数', calc: () => splitFormat().pages },
