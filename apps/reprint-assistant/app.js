@@ -1042,7 +1042,8 @@ function renderBottomTable() {
   for (const row of state.rows) {
     const link = resolveNextLink(row);
     const hit = findSheetRowForRow(row);
-    const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
+    // 連載記事一覧の誘導先は回によって変わる（通常回＝参照元／最終回＝今回）
+    const bottomHtml = hit ? buildArticleBottomHtml(hit.html, row.isFinal) : '';
 
     const tr = document.createElement('tr');
 
@@ -1224,6 +1225,17 @@ function createSheetCell(row, hit, bottomHtml) {
     )
   );
 
+  // 一覧リンクの誘導先は回によって変わるため、貼る前に確認できるようにする
+  const target = getListTarget(row.isFinal);
+
+  cell.appendChild(
+    createLine(
+      `一覧：/category/${target.categoryCode || '（コード不明）'}` +
+        `『${target.bookTitle || 'タイトル不明'}』`,
+      'sub'
+    )
+  );
+
   return cell;
 }
 
@@ -1279,11 +1291,14 @@ function buildFinalEpisodeHtml() {
   return '<p>本連載は今回で最終回です。ご愛読ありがとうございました。</p>';
 }
 
-// 再掲連載では【注目記事】【人気記事】を載せない。
-//
 // C列は「連載記事一覧 → 【イチオシ記事】 →【注目記事】→（定型文）」の並び。
-// 古い行には【人気記事】も入っている。どちらも1つの <p>…</p> に収まっているので、
-// その段落だけを丸ごと落とす。残すのは【イチオシ記事】。
+// 古い行には【人気記事】も入っている。いずれも1つの <p>…</p> に収まっているので、
+// 落とすときはその段落だけを丸ごと消す。
+//
+// 再掲連載で落とすものは通常回と最終回で違う。
+//   通常回：【注目記事】【人気記事】を落とす（残すのは【イチオシ記事】）
+//   最終回：【人気記事】だけ落とす（【注目記事】は残す）
+// このため注目・人気を1本の正規表現にまとめず、ラベルごとに分けている。
 //
 // 判定は必ず【注目記事】【人気記事】という記事ラベルで行う。
 // 「注目」「人気」だけで判定すると、書籍タイトルの
@@ -1294,32 +1309,70 @@ function buildFinalEpisodeHtml() {
 //   ・見出しは <strong><span> の内側にあり、途中に改行が入る行もある
 // このため「同じ段落の中にラベルがある」ことを
 // </p> をまたがない先読みで確かめてから、その段落の終わりまでを消す。
-const DROP_PARAGRAPH_RE =
-  /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【(?:注目|人気)記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
+const DROP_ATTENTION_RE =
+  /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【注目記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
 
-function removeDroppedParagraphs(html) {
-  return String(html || '').replace(DROP_PARAGRAPH_RE, '');
+const DROP_POPULAR_RE =
+  /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【人気記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
+
+// 全回まとめて注目記事を落としてから最終回を判定する、という順序にはしない。
+// 先に落としてしまうと最終回で復元できないため、必ず isFinal で分岐させる。
+function removeDroppedParagraphs(html, isFinal) {
+  const source = String(html || '');
+
+  if (isFinal) {
+    // 最終回は【注目記事】を残す。落とすのは【人気記事】だけ
+    return source.replace(DROP_POPULAR_RE, '');
+  }
+
+  return source.replace(DROP_ATTENTION_RE, '').replace(DROP_POPULAR_RE, '');
+}
+
+// 「連載記事一覧はこちら」の誘導先。
+//
+//   通常回：まだ読める参照元連載へ送る（例：/category/gr1334）
+//   最終回：今回作った再掲連載の一覧へ送る（例：/category/gr1974）
+//
+// 表示するタイトルもリンク先と揃える。食い違うと読者が別の連載に飛ばされる。
+function getListTarget(isFinal) {
+  const series = state.series;
+  const source = state.selectedSource;
+
+  const target = isFinal
+    ? {
+        categoryCode: (series && series.categoryCode) || '',
+        bookTitle: (series && series.bookTitle) || '',
+      }
+    : {
+        categoryCode: (source && source.categoryCode) || '',
+        bookTitle: (source && source.bookTitle) || '',
+      };
+
+  return {
+    categoryCode: String(target.categoryCode).trim(),
+    bookTitle: stripBookTitleBrackets(target.bookTitle),
+  };
+}
+
+// タイトル自体に『』が付いている場合は外す。
+// テンプレート側に『』があるため二重化を防ぐ
+function stripBookTitleBrackets(value) {
+  const title = String(value || '').trim();
+  const match = title.match(/^『(.*)』$/);
+
+  return match ? match[1] : title;
 }
 
 // スプレッドシートC列HTMLのプレースホルダーを、
-// 今回入力したカテゴリコードと書籍タイトルに置き換える。
-function buildArticleBottomHtml(cHtml) {
+// その回の誘導先（通常回＝参照元／最終回＝今回）に置き換える。
+function buildArticleBottomHtml(cHtml, isFinal) {
   // 置換より先に落とす。
   // 書籍タイトルを入れてから消すと、タイトル次第で判定が変わりうる
-  let c = removeDroppedParagraphs(String(cHtml || '').trim()).trim();
+  let c = removeDroppedParagraphs(String(cHtml || '').trim(), isFinal).trim();
 
   if (!c) return '';
 
-  const series = state.series;
-
-  const categoryCode = String((series && series.categoryCode) || '').trim();
-
-  let bookTitle = String((series && series.bookTitle) || '').trim();
-
-  // タイトル自体に『』が付いている場合は外す。
-  // テンプレート側に『』があるため二重化を防ぐ
-  const titleMatch = bookTitle.match(/^『(.*)』$/);
-  if (titleMatch) bookTitle = titleMatch[1];
+  const { categoryCode, bookTitle } = getListTarget(isFinal);
 
   // gr●●●● を先に置換する。
   // ●●●●●●●●（8個）を先に処理すると gr●●●●（4個）が壊れる
