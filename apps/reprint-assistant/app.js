@@ -1,8 +1,12 @@
 /* ============================================================
-   再掲連載作成アシスタント Ver.0.1
+   再掲連載作成アシスタント Ver.0.3
 
-   ・kintoneへは直接アクセスしない。/api/reprint-data のみを使う
-   ・APIトークン等の秘密情報はこのファイルに一切置かない
+   これからMediaWeaverで作る再掲連載の記事を組み立てるための作業支援ツール。
+   今回作る記事はまだ記事データアプリに存在しないため、
+   記事IDは画面で手入力し、公開予定日はGLO連載情報の第1回配信日時から算出する。
+
+   ・kintone／スプレッドシートへは直接アクセスしない。/api/reprint-data のみ
+   ・APIトークン・GASのURLはこのファイルに一切置かない
    ============================================================ */
 
 const API_ENDPOINT = '/api/reprint-data';
@@ -12,22 +16,34 @@ const API_ENDPOINT = '/api/reprint-data';
 // ------------------------------------------------------------
 
 const state = {
-  // APIレスポンスの currentSeries
-  currentSeries: null,
+  // GLO連載情報アプリの1レコード（今回作る再掲連載）
+  series: null,
 
-  // APIレスポンスの sourceCandidates
+  // 記事データアプリ341から作った参照元候補
   sourceCandidates: [],
-
-  // 選択中の参照元（sourceCandidates の1要素）
   selectedSource: null,
+
+  // 参照元候補そのものが取れなかったときの理由
+  sourceError: '',
 
   // 参照元の「回数 → 記事」対応表
   sourceByEpisode: new Map(),
-};
 
-// コピー用テキストはHTMLに埋め込まず、ここに退避して index で引く。
-// data-* に入れると引用符やタグのエスケープ事故が起きるため。
-const copyTexts = [];
+  // 作業行。参照元の回数ぶん作る
+  // { number, label, isFinal, planned, articleId, el }
+  rows: [],
+
+  // スプレッドシート「毎月の記事下リンク」。rows は [B列, C列] の配列
+  sheetRows: null,
+  sheetStatus: 'error',
+  sheetMessage: '',
+
+  // 年を推定済みの行。sheetRows が変わったときだけ作り直す
+  parsedSheetRows: null,
+  parsedSheetSource: null,
+
+  activeTab: 'prev',
+};
 
 // ------------------------------------------------------------
 // DOM
@@ -41,19 +57,28 @@ const el = {
   warnings: document.getElementById('warnings'),
   warningsList: document.getElementById('warnings-list'),
 
-  sectionCurrent: document.getElementById('section-current'),
-  currentTitle: document.getElementById('current-title'),
-  currentCode: document.getElementById('current-code'),
-  currentCount: document.getElementById('current-count'),
-  currentType: document.getElementById('current-type'),
-
-  sectionSource: document.getElementById('section-source'),
+  sectionCommon: document.getElementById('section-common'),
+  seriesTitle: document.getElementById('series-title'),
+  seriesCode: document.getElementById('series-code'),
+  seriesFirst: document.getElementById('series-first'),
+  seriesProdNo: document.getElementById('series-prodno'),
   sourceSelect: document.getElementById('source-select'),
   sourceStatus: document.getElementById('source-status'),
+  sheetStatus: document.getElementById('sheet-status'),
+  kintoneLink: document.getElementById('kintone-link'),
 
-  sectionArticles: document.getElementById('section-articles'),
-  articlesCount: document.getElementById('articles-count'),
-  articleList: document.getElementById('article-list'),
+  sectionTabs: document.getElementById('section-tabs'),
+  tabButtons: Array.from(document.querySelectorAll('.tab')),
+  panelPrev: document.getElementById('panel-prev'),
+  panelBottom: document.getElementById('panel-bottom'),
+
+  bulkInput: document.getElementById('bulk-input'),
+  bulkApply: document.getElementById('bulk-apply'),
+  bulkClear: document.getElementById('bulk-clear'),
+  bulkStatus: document.getElementById('bulk-status'),
+
+  prevBody: document.getElementById('prev-body'),
+  bottomBody: document.getElementById('bottom-body'),
 
   toast: document.getElementById('toast'),
 };
@@ -74,30 +99,53 @@ el.codeInput.addEventListener('keydown', (event) => {
 
 el.sourceSelect.addEventListener('change', () => {
   applySourceSelection(el.sourceSelect.value);
-  renderArticles();
+  buildRows();
+  renderPrevTable();
+  renderBottomTable();
 });
 
-// コピーボタンは一箇所で受ける
-document.addEventListener('click', (event) => {
-  const button = event.target.closest('button.copy');
-
-  if (!button) return;
-
-  const index = Number(button.dataset.copyIndex);
-
-  if (!Number.isInteger(index) || !copyTexts[index]) {
-    showToast('コピーする内容がありません');
-    return;
-  }
-
-  copyText(copyTexts[index]).then((ok) => {
-    if (ok) {
-      button.classList.add('copied');
-      showToast(button.dataset.copyLabel || 'コピーしました');
-    } else {
-      showToast('コピーできませんでした');
-    }
+el.tabButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    switchTab(button.dataset.tab);
   });
+
+  // 左右キーでもタブを移動できるようにする
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+
+    event.preventDefault();
+    switchTab(state.activeTab === 'prev' ? 'bottom' : 'prev');
+
+    const next = el.tabButtons.find(
+      (tab) => tab.dataset.tab === state.activeTab
+    );
+
+    if (next) next.focus();
+  });
+});
+
+el.bulkApply.addEventListener('click', () => {
+  applyBulkIds();
+});
+
+el.bulkClear.addEventListener('click', () => {
+  clearArticleIds();
+});
+
+// 記事IDは行ごとに個別入力もできる。
+// 入力した行の値は「次の行の前回記事」にだけ効くので、そこだけ更新する。
+el.prevBody.addEventListener('input', (event) => {
+  const input = event.target.closest('input.id-input');
+
+  if (!input) return;
+
+  const index = Number(input.dataset.index);
+
+  if (!Number.isInteger(index) || !state.rows[index]) return;
+
+  state.rows[index].articleId = input.value;
+
+  updatePrevRow(index + 1);
 });
 
 // URLに ?code= が付いていれば初期表示で取得しておく
@@ -135,7 +183,7 @@ async function fetchReprintData() {
 
     const json = await response.json().catch(() => null);
 
-    if (!response.ok || !json || json.status !== 'ok') {
+    if (!response.ok || !json) {
       const message =
         (json && (json.error || json.status)) ||
         `取得に失敗しました（HTTP ${response.status}）`;
@@ -145,15 +193,55 @@ async function fetchReprintData() {
       return;
     }
 
-    state.currentSeries = json.currentSeries || null;
-    state.sourceCandidates = Array.isArray(json.sourceCandidates)
-      ? json.sourceCandidates
+    // スプレッドシートは kintone と独立して扱う。
+    // 記事下だけ取れなくても、前回記事タブは最後まで使えるようにする。
+    const sheet = json.sheet || {};
+
+    state.sheetStatus = sheet.status === 'ok' ? 'ok' : 'error';
+    state.sheetRows =
+      sheet.status === 'ok' && Array.isArray(sheet.rows) ? sheet.rows : null;
+    state.sheetMessage = String(sheet.message || '');
+    state.parsedSheetRows = null;
+    state.parsedSheetSource = null;
+
+    const series = json.series || {};
+
+    if (series.status !== 'ok' || !series.data) {
+      resetView();
+      renderWarnings(json.warnings);
+      setStatus(
+        series.message || 'GLO連載情報を取得できませんでした',
+        true
+      );
+      return;
+    }
+
+    state.series = series.data;
+
+    // カテゴリコードが変わったので、前のレコードの入力は引き継がない
+    state.rows = [];
+    setBulkStatus('');
+
+    const source = json.source || {};
+
+    state.sourceCandidates = Array.isArray(source.candidates)
+      ? source.candidates
       : [];
 
+    // 参照元候補そのものが取れなかった場合は、その理由を選択欄の横に出す
+    state.sourceError =
+      source.status === 'ok' ? '' : String(source.message || '');
+
     renderWarnings(json.warnings);
-    renderCurrentSeries();
+    renderCommon();
     renderSourceCandidates();
-    renderArticles();
+
+    buildRows();
+    renderPrevTable();
+    renderBottomTable();
+
+    el.sectionTabs.hidden = false;
+    switchTab(state.activeTab);
 
     setStatus(`取得しました（${new Date().toLocaleTimeString('ja-JP')}）`);
 
@@ -172,22 +260,23 @@ function setStatus(message, isError = false) {
 }
 
 function resetView() {
-  state.currentSeries = null;
+  state.series = null;
   state.sourceCandidates = [];
   state.selectedSource = null;
+  state.sourceError = '';
   state.sourceByEpisode = new Map();
-
-  copyTexts.length = 0;
+  state.rows = [];
 
   el.warnings.hidden = true;
   el.warningsList.textContent = '';
 
-  el.sectionCurrent.hidden = true;
-  el.sectionSource.hidden = true;
-  el.sectionArticles.hidden = true;
+  el.sectionCommon.hidden = true;
+  el.sectionTabs.hidden = true;
 
   el.sourceSelect.textContent = '';
-  el.articleList.textContent = '';
+  el.prevBody.textContent = '';
+  el.bottomBody.textContent = '';
+  el.bulkStatus.textContent = '';
 }
 
 // ------------------------------------------------------------
@@ -214,23 +303,51 @@ function renderWarnings(warnings) {
 }
 
 // ------------------------------------------------------------
-// 今回の再掲情報
+// 共通エリア
 // ------------------------------------------------------------
 
-function renderCurrentSeries() {
-  const series = state.currentSeries;
+function renderCommon() {
+  const series = state.series;
 
-  if (!series) {
-    el.sectionCurrent.hidden = true;
+  el.seriesTitle.textContent = series.bookTitle || '（書籍タイトルなし）';
+  el.seriesTitle.title = series.bookTitle || '';
+
+  el.seriesCode.textContent = series.categoryCode || '—';
+
+  el.seriesFirst.textContent = series.firstDeliveryAt
+    ? fmtDateTime(getFirstDeliveryParts())
+    : '未登録';
+
+  el.seriesFirst.classList.toggle('warn', !series.firstDeliveryAt);
+
+  el.seriesProdNo.textContent = series.productionNo || '—';
+
+  if (series.kintoneUrl) {
+    el.kintoneLink.href = series.kintoneUrl;
+    el.kintoneLink.hidden = false;
+  } else {
+    el.kintoneLink.hidden = true;
+  }
+
+  renderSheetStatus();
+
+  el.sectionCommon.hidden = false;
+}
+
+function renderSheetStatus() {
+  if (state.sheetStatus === 'ok') {
+    const count = Array.isArray(state.sheetRows) ? state.sheetRows.length : 0;
+
+    el.sheetStatus.textContent = `記事下データ：取得済み（${count}行）`;
+    el.sheetStatus.classList.remove('warn');
+    el.sheetStatus.title = '';
     return;
   }
 
-  el.currentTitle.textContent = series.bookTitle || '（書籍タイトルなし）';
-  el.currentCode.textContent = series.categoryCode || '—';
-  el.currentCount.textContent = String(series.count || 0);
-  el.currentType.textContent = series.serialType || '—';
-
-  el.sectionCurrent.hidden = false;
+  el.sheetStatus.textContent =
+    `記事下データ：取得失敗（${state.sheetMessage || '理由不明'}）`;
+  el.sheetStatus.classList.add('warn');
+  el.sheetStatus.title = state.sheetMessage || '';
 }
 
 // ------------------------------------------------------------
@@ -250,13 +367,12 @@ function renderSourceCandidates() {
     el.sourceSelect.disabled = true;
 
     applySourceSelection('');
-    el.sectionSource.hidden = false;
     return;
   }
 
   el.sourceSelect.disabled = false;
 
-  // 自動確定はしないが、先頭候補は初期表示にしてよい
+  // 自動確定はしない。先頭候補を初期表示にするだけ
   for (const candidate of candidates) {
     const option = document.createElement('option');
 
@@ -273,8 +389,6 @@ function renderSourceCandidates() {
 
   el.sourceSelect.selectedIndex = 0;
   applySourceSelection(el.sourceSelect.value);
-
-  el.sectionSource.hidden = false;
 }
 
 function applySourceSelection(categoryCode) {
@@ -288,48 +402,39 @@ function applySourceSelection(categoryCode) {
   );
 
   if (!state.selectedSource) {
-    el.sourceStatus.textContent = '参照元が未選択です';
+    el.sourceStatus.textContent =
+      state.sourceError || '参照元が未選択です';
     el.sourceStatus.classList.add('warn');
     return;
   }
 
-  const current = state.currentSeries;
-  const currentCount = current ? Number(current.count || 0) : 0;
-  const sourceCount = Number(state.selectedSource.count || 0);
+  const count = Number(state.selectedSource.count || 0);
 
-  if (currentCount && sourceCount && currentCount !== sourceCount) {
-    el.sourceStatus.textContent =
-      `回数が一致しません（今回 ${currentCount}回 / 参照元 ${sourceCount}回）`;
-    el.sourceStatus.classList.add('warn');
-  } else {
-    el.sourceStatus.textContent = `参照元 ${sourceCount}回`;
-    el.sourceStatus.classList.remove('warn');
-  }
+  el.sourceStatus.textContent =
+    `第1回〜最終回の${count}行を作成しました`;
+  el.sourceStatus.classList.remove('warn');
 }
 
-// ------------------------------------------------------------
-// 回数の解決
-//
 // 参照先は公開日時ではなく回数で突き合わせる。
 // 「回数・数値」→「第N回」ラベル→並び順、の順に解決する。
 // 「最終回」は数値もラベルも持たないことがあるため、
 // 並び順（回数順ソート済み）からの推定を最後の手段として残す。
-// ------------------------------------------------------------
-
 function resolveEpisodeNumber(article, index) {
   const numeric = Number(article && article.episodeNumber);
 
   if (Number.isFinite(numeric) && numeric > 0) {
-    return { number: numeric, inferred: false };
+    return numeric;
   }
 
-  const match = String((article && article.episodeLabel) || '').match(/第(\d+)回/);
+  const match = String((article && article.episodeLabel) || '').match(
+    /第(\d+)回/
+  );
 
   if (match) {
-    return { number: Number(match[1]), inferred: false };
+    return Number(match[1]);
   }
 
-  return { number: index + 1, inferred: true };
+  return index + 1;
 }
 
 function buildEpisodeMap(articles) {
@@ -338,7 +443,7 @@ function buildEpisodeMap(articles) {
   if (!Array.isArray(articles)) return map;
 
   articles.forEach((article, index) => {
-    const { number } = resolveEpisodeNumber(article, index);
+    const number = resolveEpisodeNumber(article, index);
 
     // 同じ回数が重複する場合は先に出てきた方を優先する
     if (!map.has(number)) {
@@ -350,171 +455,581 @@ function buildEpisodeMap(articles) {
 }
 
 // ------------------------------------------------------------
-// 記事一覧
+// 作業行の生成
+//
+// 行数は参照元連載の回数に合わせる。
+// 最終行は「最終回」とし、記事下では続きを読むを作らない。
+// 参照元を選び直しても、入力済みの記事IDは同じ回に残す。
 // ------------------------------------------------------------
 
-function renderArticles() {
-  const series = state.currentSeries;
+function buildRows() {
+  const keptIds = state.rows.map((row) => row.articleId);
 
-  copyTexts.length = 0;
-  el.articleList.textContent = '';
+  state.rows = [];
 
-  if (!series || !Array.isArray(series.articles) || !series.articles.length) {
-    el.sectionArticles.hidden = true;
+  const source = state.selectedSource;
+
+  if (!source || !Array.isArray(source.articles) || !source.articles.length) {
     return;
   }
 
-  el.articlesCount.textContent = `全${series.articles.length}件`;
+  const base = getFirstDeliveryParts();
+  const total = source.articles.length;
 
-  series.articles.forEach((article, index) => {
-    el.articleList.appendChild(buildArticleCard(article, index));
-  });
+  for (let index = 0; index < total; index++) {
+    const isFinal = index === total - 1;
 
-  el.sectionArticles.hidden = false;
-}
+    state.rows.push({
+      number: index + 1,
+      label: isFinal ? '最終回' : `第${index + 1}回`,
+      isFinal,
 
-function buildArticleCard(article, index) {
-  const { number } = resolveEpisodeNumber(article, index);
+      // 再掲は毎日更新。第1回配信日時から1日ずつ足す
+      planned: base ? addDays(base, index) : null,
 
-  const card = document.createElement('article');
-  card.className = 'ep-card';
-
-  // ---- 見出し行：回数 / タイトル / 記事ID ----
-  const head = document.createElement('div');
-  head.className = 'ep-head';
-
-  const no = document.createElement('span');
-  no.className = 'ep-no';
-  no.textContent = article.episodeLabel || `第${number}回`;
-
-  const title = document.createElement('span');
-  title.className = 'ep-title';
-  title.textContent = article.articleTitle || '（記事タイトルなし）';
-  title.title = article.articleTitle || '';
-
-  const id = document.createElement('span');
-  id.className = 'ep-id';
-  id.textContent = article.articleId ? `ID ${article.articleId}` : 'ID なし';
-
-  head.append(no, title, id);
-
-  // ---- 本体：前回 / 続き ----
-  const body = document.createElement('div');
-  body.className = 'ep-body';
-
-  body.appendChild(buildPreviousBlock(article, index));
-  body.appendChild(buildNextBlock(article, number));
-
-  card.append(head, body);
-
-  return card;
-}
-
-// ---- 【前回の記事を読む】 ----
-
-function buildPreviousBlock(article, index) {
-  const block = createBlock('前回の記事を読む');
-
-  if (index === 0) {
-    block.appendChild(createValue('なし', 'muted'));
-    return block;
+      articleId: keptIds[index] || '',
+      el: null,
+    });
   }
-
-  const previous = article.previousArticle;
-
-  if (!previous) {
-    block.appendChild(createValue('前回記事が取得できませんでした', 'warn'));
-    return block;
-  }
-
-  block.appendChild(
-    createValue(
-      `前回：${previous.episodeLabel || '（回数不明）'} / ID ${
-        previous.articleId || 'なし'
-      }`
-    )
-  );
-
-  if (previous.articleTitle) {
-    block.appendChild(createSubValue(previous.articleTitle));
-  }
-
-  if (article.previousHtml) {
-    block.appendChild(
-      createCopyButton(
-        article.previousHtml,
-        '前回記事HTMLをコピー',
-        '前回記事HTMLをコピーしました'
-      )
-    );
-  } else {
-    block.appendChild(createValue('前回記事の記事IDがありません', 'warn'));
-  }
-
-  return block;
-}
-
-// ---- 【この話の続きを読む】 ----
-
-function buildNextBlock(article, number) {
-  const block = createBlock('この話の続きを読む');
-
-  if (article.isFinal) {
-    block.appendChild(
-      createValue(
-        '本連載は今回で最終回です。ご愛読ありがとうございました。',
-        'final'
-      )
-    );
-    return block;
-  }
-
-  if (!state.selectedSource) {
-    block.appendChild(createValue('参照元を選択してください', 'warn'));
-    return block;
-  }
-
-  const nextNumber = number + 1;
-  const source = state.sourceByEpisode.get(nextNumber);
-
-  if (!source) {
-    block.appendChild(createValue('参照元に該当回がありません', 'warn'));
-    return block;
-  }
-
-  if (!source.articleId) {
-    block.appendChild(
-      createValue(
-        `参照元 ${source.episodeLabel || `第${nextNumber}回`} に記事IDがありません`,
-        'warn'
-      )
-    );
-    return block;
-  }
-
-  block.appendChild(
-    createValue(
-      `参照元：${source.episodeLabel || `第${nextNumber}回`} / ID ${source.articleId}`
-    )
-  );
-
-  block.appendChild(
-    createSubValue(source.articleTitle || '（記事タイトルなし）')
-  );
-
-  block.appendChild(
-    createCopyButton(
-      buildNextArticleHtml(source.articleId, source.articleTitle),
-      '続きを読むHTMLをコピー',
-      '続きを読むHTMLをコピーしました'
-    )
-  );
-
-  return block;
 }
 
 // ------------------------------------------------------------
-// 「この話の続きを読む」HTML
+// 公開予定日時
+//
+// 今回の記事は記事データアプリに無いため、公開日時は取得できない。
+// GLO連載情報の「第1回配信日時」を日本時間で読み、そこから1日ずつ足す。
+// ------------------------------------------------------------
+
+function getFirstDeliveryParts() {
+  return parseJstParts(state.series && state.series.firstDeliveryAt);
+}
+
+// kintoneの日時はUTC表記で返るため、必ずAsia/Tokyoに直してから使う。
+// 実行環境のタイムゾーンに依存させない。
+function parseJstParts(value) {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (isNaN(date)) return null;
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  const get = (type) => {
+    const found = parts.find((part) => part.type === type);
+    return found ? Number(found.value) : NaN;
+  };
+
+  const y = get('year');
+  const m = get('month');
+  const d = get('day');
+  const hh = get('hour');
+  const mi = get('minute');
+
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
+    return null;
+  }
+
+  return {
+    y,
+    m,
+    d,
+    hh: Number.isFinite(hh) ? hh % 24 : 0,
+    mi: Number.isFinite(mi) ? mi : 0,
+  };
+}
+
+// 日本時間の壁時計をそのまま持ち回るため、
+// 取り出した年月日時分から素のDateを組み立てて日数を足す。
+function addDays(parts, days) {
+  return new Date(parts.y, parts.m - 1, parts.d + days, parts.hh, parts.mi);
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+// 一覧に小さく出す用：8/20 21:00
+function fmtPlannedShort(date) {
+  return (
+    `${date.getMonth() + 1}/${date.getDate()} ` +
+    `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  );
+}
+
+// 共通エリア用：2026/08/20 21:00
+function fmtDateTime(parts) {
+  if (!parts) return '未登録';
+
+  return (
+    `${parts.y}/${pad2(parts.m)}/${pad2(parts.d)} ` +
+    `${pad2(parts.hh)}:${pad2(parts.mi)}`
+  );
+}
+
+// 期間が見つからないときの確認用：2026/08/20
+function fmtYmd(date) {
+  return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(
+    date.getDate()
+  )}`;
+}
+
+// 期間の確認表示用：2026/8/23
+function fmtYmdShort(date) {
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+// ------------------------------------------------------------
+// タブ
+// ------------------------------------------------------------
+
+function switchTab(name) {
+  state.activeTab = name === 'bottom' ? 'bottom' : 'prev';
+
+  el.tabButtons.forEach((button) => {
+    const isActive = button.dataset.tab === state.activeTab;
+
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  el.panelPrev.hidden = state.activeTab !== 'prev';
+  el.panelBottom.hidden = state.activeTab !== 'bottom';
+}
+
+// ============================================================
+// ① 前回記事タブ
+//
+// 今回作る記事のIDを各回に入力し、
+// 第2回以降は「1つ前の行の今回の記事ID」を前回記事として使う。
+// 過去の再掲記事をkintoneから取ってくることはしない。
+// ============================================================
+
+function renderPrevTable() {
+  el.prevBody.textContent = '';
+
+  if (!state.rows.length) {
+    el.prevBody.appendChild(
+      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
+    );
+    return;
+  }
+
+  state.rows.forEach((row, index) => {
+    const tr = document.createElement('tr');
+
+    tr.appendChild(createCell(row.label, 'col-ep ep-no'));
+    tr.appendChild(createPlannedCell(row));
+
+    // ---- 今回の記事ID ----
+    const idCell = document.createElement('td');
+    idCell.className = 'col-id';
+
+    const input = document.createElement('input');
+
+    input.type = 'text';
+    input.className = 'id-input mono';
+    input.inputMode = 'numeric';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.placeholder = '30001';
+    input.value = row.articleId;
+    input.dataset.index = String(index);
+    input.setAttribute('aria-label', `${row.label}の今回の記事ID`);
+
+    idCell.appendChild(input);
+    tr.appendChild(idCell);
+
+    // ---- 前回記事 ----
+    const prevCell = document.createElement('td');
+    prevCell.className = 'col-prev';
+    tr.appendChild(prevCell);
+
+    // ---- コピー ----
+    const actionCell = document.createElement('td');
+    actionCell.className = 'col-act';
+
+    const button = createCopyButton(
+      '前回記事HTMLをコピー',
+      () => buildPreviousHtmlFor(index),
+      '前回記事HTMLをコピーしました'
+    );
+
+    actionCell.appendChild(button);
+    tr.appendChild(actionCell);
+
+    row.el = { input, prevCell, button };
+
+    el.prevBody.appendChild(tr);
+  });
+
+  state.rows.forEach((_, index) => updatePrevRow(index));
+}
+
+// 前回記事は「1つ前の行の今回の記事ID」。
+// 未入力のままコピーさせると誤ったIDのリンクが貼られるので、ボタンを無効にする。
+function updatePrevRow(index) {
+  const row = state.rows[index];
+
+  if (!row || !row.el) return;
+
+  const cell = row.el.prevCell;
+  const button = row.el.button;
+
+  cell.textContent = '';
+  cell.className = 'col-prev';
+
+  if (index === 0) {
+    cell.textContent = 'なし';
+    cell.classList.add('muted');
+
+    button.disabled = true;
+    button.title = '第1回に前回記事はありません';
+    return;
+  }
+
+  const previous = state.rows[index - 1];
+  const previousId = String(previous.articleId || '').trim();
+
+  if (!previousId) {
+    cell.textContent = '前回の記事IDを入力してください';
+    cell.classList.add('warn');
+
+    button.disabled = true;
+    button.title = '前回の記事IDを入力してください';
+    return;
+  }
+
+  cell.textContent = `${previous.label}／ID ${previousId}`;
+
+  button.disabled = false;
+  button.title = '';
+}
+
+function buildPreviousHtmlFor(index) {
+  const previous = state.rows[index - 1];
+  const previousId = String((previous && previous.articleId) || '').trim();
+
+  if (!previousId) return '';
+
+  return buildPreviousArticleHtml(previousId);
+}
+
+function buildPreviousArticleHtml(articleId) {
+  return (
+    `<p align="center">` +
+    `<a href="/articles/-/${escapeHtml(articleId)}" target="_blank">` +
+    `<strong>` +
+    `<span style="color:#0000CD;">【前回の記事を読む】●▼■</span>` +
+    `</strong>` +
+    `</a>` +
+    `</p>`
+  );
+}
+
+// ---- 記事IDの一括貼り付け ----
+
+function applyBulkIds() {
+  if (!state.rows.length) {
+    setBulkStatus('先に参照元連載を選択してください', true);
+    return;
+  }
+
+  const ids = String(el.bulkInput.value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!ids.length) {
+    setBulkStatus('記事IDが入力されていません', true);
+    return;
+  }
+
+  state.rows.forEach((row, index) => {
+    if (index < ids.length) {
+      row.articleId = ids[index];
+
+      if (row.el) row.el.input.value = row.articleId;
+    }
+  });
+
+  state.rows.forEach((_, index) => updatePrevRow(index));
+
+  const applied = Math.min(ids.length, state.rows.length);
+
+  let message = `${applied}件を反映しました`;
+
+  if (ids.length > state.rows.length) {
+    message += `（${ids.length - state.rows.length}件は行数を超えたため未使用）`;
+  } else if (ids.length < state.rows.length) {
+    message += `（残り${state.rows.length - ids.length}回は未入力）`;
+  }
+
+  setBulkStatus(message, ids.length > state.rows.length);
+}
+
+function clearArticleIds() {
+  state.rows.forEach((row) => {
+    row.articleId = '';
+
+    if (row.el) row.el.input.value = '';
+  });
+
+  state.rows.forEach((_, index) => updatePrevRow(index));
+
+  setBulkStatus('記事IDを消しました');
+}
+
+function setBulkStatus(message, isWarn = false) {
+  el.bulkStatus.textContent = message;
+  el.bulkStatus.classList.toggle('warn', Boolean(isWarn));
+}
+
+// ============================================================
+// ② 記事下タブ
+//
+//   この話の続きを読む（最終回は固定文言）
+//     ↓
+//   連載一覧
+//     ↓
+//   イチオシ
+//
+// 連載一覧・イチオシはスプレッドシートC列そのもの。
+// 新連載作成アシスタントの <p>あ</p> 3行はここでは付けない。
+// ============================================================
+
+function renderBottomTable() {
+  el.bottomBody.textContent = '';
+
+  if (!state.rows.length) {
+    el.bottomBody.appendChild(
+      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
+    );
+    return;
+  }
+
+  for (const row of state.rows) {
+    const link = resolveNextLink(row);
+    const hit = findSheetRowForRow(row);
+    const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
+
+    const tr = document.createElement('tr');
+
+    tr.appendChild(createCell(row.label, 'col-ep ep-no'));
+    tr.appendChild(createPlannedCell(row));
+    tr.appendChild(createNextCell(link));
+    tr.appendChild(createSheetCell(row, hit, bottomHtml));
+
+    const actionCell = document.createElement('td');
+    actionCell.className = 'col-act';
+
+    const reason = bottomCopyBlockReason(link, hit, bottomHtml);
+
+    if (reason) {
+      actionCell.appendChild(
+        createDisabledButton('記事下まとめてコピー', reason)
+      );
+    } else {
+      actionCell.appendChild(
+        createCopyButton(
+          '記事下まとめてコピー',
+          () => `${link.html}\n${bottomHtml}`,
+          '記事下HTMLをコピーしました',
+          'strong'
+        )
+      );
+    }
+
+    tr.appendChild(actionCell);
+
+    el.bottomBody.appendChild(tr);
+  }
+}
+
+// 今回の第N回 → 参照元の第(N+1)回。公開日時ではなく回数で突き合わせる。
+// kind が 'ok' か 'final' のときだけ html を持つ。
+function resolveNextLink(row) {
+  if (row.isFinal) {
+    return { kind: 'final', html: buildFinalEpisodeHtml() };
+  }
+
+  if (!state.selectedSource) {
+    return { kind: 'no-source', html: '' };
+  }
+
+  const nextNumber = row.number + 1;
+  const source = state.sourceByEpisode.get(nextNumber);
+
+  if (!source) {
+    return { kind: 'no-episode', nextNumber, html: '' };
+  }
+
+  if (!source.articleId) {
+    return { kind: 'no-id', nextNumber, source, html: '' };
+  }
+
+  return {
+    kind: 'ok',
+    nextNumber,
+    source,
+    html: buildNextArticleHtml(source.articleId, source.articleTitle),
+  };
+}
+
+function createNextCell(link) {
+  const cell = document.createElement('td');
+  cell.className = 'col-next';
+
+  if (link.kind === 'final') {
+    cell.appendChild(
+      createLine('本連載は今回で最終回です。ご愛読ありがとうございました。', 'final')
+    );
+    return cell;
+  }
+
+  if (link.kind === 'no-source') {
+    cell.appendChild(createLine('参照元を選択してください', 'warn'));
+    return cell;
+  }
+
+  if (link.kind === 'no-episode') {
+    cell.appendChild(
+      createLine(`参照元に第${link.nextNumber}回がありません`, 'warn')
+    );
+    return cell;
+  }
+
+  if (link.kind === 'no-id') {
+    cell.appendChild(
+      createLine(
+        `参照元 ${
+          link.source.episodeLabel || `第${link.nextNumber}回`
+        } に記事IDがありません`,
+        'warn'
+      )
+    );
+    return cell;
+  }
+
+  const source = link.source;
+
+  cell.appendChild(
+    createLine(
+      `参照元 ${
+        source.episodeLabel || `第${link.nextNumber}回`
+      }／ID ${source.articleId}`,
+      'mono-id'
+    )
+  );
+
+  cell.appendChild(
+    createLine(source.articleTitle || '（記事タイトルなし）', 'sub ellip')
+  );
+
+  return cell;
+}
+
+// 記事下リンク（連載一覧＋イチオシ）の状態。
+// 誤ったHTMLを作らないよう、取れていない理由をそのまま出す。
+function createSheetCell(row, hit, bottomHtml) {
+  const cell = document.createElement('td');
+  cell.className = 'col-sheet';
+
+  if (state.sheetStatus !== 'ok') {
+    cell.appendChild(
+      createLine('記事下リンク：スプレッドシートを取得できませんでした', 'warn')
+    );
+
+    if (state.sheetMessage) {
+      cell.appendChild(createLine(state.sheetMessage, 'sub ellip'));
+    }
+
+    return cell;
+  }
+
+  if (!row.planned) {
+    cell.appendChild(
+      createLine('記事下リンク：公開予定日を算出できません', 'warn')
+    );
+    cell.appendChild(
+      createLine('第1回配信日時が未登録です', 'sub')
+    );
+    return cell;
+  }
+
+  if (!hit) {
+    cell.appendChild(
+      createLine('記事下リンク：該当期間が見つかりません', 'warn')
+    );
+    cell.appendChild(
+      createLine(`予定公開日：${fmtYmd(row.planned)}`, 'sub')
+    );
+    return cell;
+  }
+
+  if (!bottomHtml) {
+    cell.appendChild(
+      createLine(`記事下：${hit.period.label}（C列が空です）`, 'warn')
+    );
+    return cell;
+  }
+
+  cell.appendChild(createLine(hit.period.label, 'ellip'));
+
+  // B列に年が無いため、判定した年を併記して
+  // 別の年の行を拾っていないか目視で確認できるようにする
+  cell.appendChild(
+    createLine(
+      `${fmtYmdShort(hit.period.start)}〜${fmtYmdShort(hit.period.end)}`,
+      'sub'
+    )
+  );
+
+  return cell;
+}
+
+// 揃っていないものを押せてしまうと誤ったHTMLが貼られるため、
+// コピーできない場合はボタン自体を無効にして理由を出す
+function bottomCopyBlockReason(link, hit, bottomHtml) {
+  if (link.kind === 'no-source') {
+    return '参照元が未選択です';
+  }
+
+  if (link.kind === 'no-episode') {
+    return '参照元に該当回がありません';
+  }
+
+  if (link.kind === 'no-id') {
+    return '参照元に記事IDがありません';
+  }
+
+  if (state.sheetStatus !== 'ok') {
+    return state.sheetMessage
+      ? `記事下データを取得できませんでした（${state.sheetMessage}）`
+      : '記事下データを取得できませんでした';
+  }
+
+  if (!hit) {
+    return '記事下リンクの該当期間が見つかりません';
+  }
+
+  if (!bottomHtml) {
+    return '記事下リンクのC列が空です';
+  }
+
+  return '';
+}
+
+// ------------------------------------------------------------
+// 生成HTML
 // ------------------------------------------------------------
 
 function buildNextArticleHtml(articleId, articleTitle) {
@@ -528,6 +1043,44 @@ function buildNextArticleHtml(articleId, articleTitle) {
   );
 }
 
+// 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く
+function buildFinalEpisodeHtml() {
+  return '<p>本連載は今回で最終回です。ご愛読ありがとうございました。</p>';
+}
+
+// スプレッドシートC列HTMLのプレースホルダーを、
+// 今回入力したカテゴリコードと書籍タイトルに置き換える。
+function buildArticleBottomHtml(cHtml) {
+  let c = String(cHtml || '').trim();
+
+  if (!c) return '';
+
+  const series = state.series;
+
+  const categoryCode = String((series && series.categoryCode) || '').trim();
+
+  let bookTitle = String((series && series.bookTitle) || '').trim();
+
+  // タイトル自体に『』が付いている場合は外す。
+  // テンプレート側に『』があるため二重化を防ぐ
+  const titleMatch = bookTitle.match(/^『(.*)』$/);
+  if (titleMatch) bookTitle = titleMatch[1];
+
+  // gr●●●● を先に置換する。
+  // ●●●●●●●●（8個）を先に処理すると gr●●●●（4個）が壊れる
+  if (categoryCode) {
+    c = c.split('grxxxx').join(categoryCode);
+    c = c.split('gr●●●●').join(categoryCode);
+  }
+
+  if (bookTitle) {
+    c = c.split('xxxxxxxx').join(bookTitle);
+    c = c.split('●●●●●●●●').join(bookTitle);
+  }
+
+  return c;
+}
+
 // 生成HTMLに埋め込む値のエスケープ。
 // 記事タイトルに & や < が入っていてもCMS側で壊れないようにする。
 function escapeHtml(value) {
@@ -537,48 +1090,270 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
+// ============================================================
+// スプレッドシート「毎月の記事下リンク」との突き合わせ
+//
+// 新連載作成アシスタントの parsePeriodParts() / assignRowYears() /
+// findSheetRow() と同じ考え方をそのまま使う。
+// B列に年が無く1年以上分の行が積み上がっているため、
+// 行ごとの年を推定してから公開予定日と突き合わせる。
+// ============================================================
+
+// B列の期間文字列から 月日 を取り出す
+//
+// 実データには以下の表記ゆれがある。
+//   「8/23（日）〜8/29（土）」  終了側に月あり
+//   「6/1（日）～7（土）」      終了側は日のみ（月は開始と同じ）
+//   「4/1～15」                 曜日なし・終了側は日のみ
+// 波ダッシュは ～(U+FF5E) と 〜(U+301C) の両方が混在している。
+function parsePeriodParts(text) {
+  const line = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => /\d{1,2}\s*\/\s*\d{1,2}/.test(l));
+
+  if (!line) return null;
+
+  const m = line.match(
+    /(\d{1,2})\s*\/\s*(\d{1,2})[^0-9]*?[～〜~][^0-9]*?(?:(\d{1,2})\s*\/\s*)?(\d{1,2})/
+  );
+
+  if (!m) return null;
+
+  const sm = +m[1];
+  const sd = +m[2];
+  const em = m[3] ? +m[3] : sm;
+  const ed = +m[4];
+
+  if (!sm || !sd || !em || !ed) return null;
+  if (sm > 12 || em > 12 || sd > 31 || ed > 31) return null;
+
+  return { sm, sd, em, ed };
+}
+
+// 最終行を anchorYear として、下から上へ年を割り当てる
+function assignYearsFrom(parsed, idxs, anchorYear) {
+  let year = anchorYear;
+  let prevSm = null;
+
+  for (let k = idxs.length - 1; k >= 0; k--) {
+    const p = parsed[idxs[k]];
+    if (prevSm !== null && p.parts.sm > prevSm) year -= 1;
+    p.year = year;
+    prevSm = p.parts.sm;
+  }
+}
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// B列には「8/23（日）」のように曜日が書かれている行が多い。
+// 曜日は年を一意に特定できるため、割り当てた年の正しさを採点できる。
+function scoreWeekdays(parsed, idxs) {
+  let score = 0;
+
+  for (const i of idxs) {
+    const p = parsed[i];
+    const m = String((p.row && p.row[0]) || '').match(
+      /(\d{1,2})\s*\/\s*(\d{1,2})\s*[（(]\s*([日月火水木金土])\s*[）)]/
+    );
+
+    if (!m) continue;
+
+    const d = new Date(p.year, p.parts.sm - 1, p.parts.sd);
+    if (WEEKDAYS[d.getDay()] === m[3]) score += 1;
+  }
+
+  return score;
+}
+
+function assignRowYears(rows, today) {
+  const parsed = rows.map((row) => ({
+    row,
+    parts: parsePeriodParts((row && row[0]) || ''),
+    year: null,
+  }));
+
+  const idxs = parsed
+    .map((p, i) => (p.parts ? i : -1))
+    .filter((i) => i >= 0);
+
+  if (!idxs.length) return parsed;
+
+  // 「今日に近い年」だけで決めるとシートが数か月未更新のときにずれるため、
+  // まずB列の曜日と一致する数で採点し、同点なら今日に近い年を採る。
+  const last = parsed[idxs[idxs.length - 1]].parts;
+  const ty = today.getFullYear();
+  let best = null;
+
+  for (const y of [ty - 2, ty - 1, ty, ty + 1]) {
+    assignYearsFrom(parsed, idxs, y);
+
+    const score = scoreWeekdays(parsed, idxs);
+    const dist = Math.abs(new Date(y, last.sm - 1, last.sd) - today);
+
+    if (
+      !best ||
+      score > best.score ||
+      (score === best.score && dist < best.dist)
+    ) {
+      best = { y, score, dist };
+    }
+  }
+
+  assignYearsFrom(parsed, idxs, best.y);
+
+  return parsed;
+}
+
+// 20行前後を突き合わせるので、年の推定結果は使い回す
+function getParsedSheetRows() {
+  if (!Array.isArray(state.sheetRows)) return null;
+
+  if (state.parsedSheetSource !== state.sheetRows) {
+    state.parsedSheetRows = assignRowYears(state.sheetRows, new Date());
+    state.parsedSheetSource = state.sheetRows;
+  }
+
+  return state.parsedSheetRows;
+}
+
+// 最終行から上方向へ検索し、最初に一致した行を採用する。
+//
+// 年を推定したうえで突き合わせるため、該当週の行がまだ無い場合は
+// 「該当なし」になる。別の年の行に一致して古いリンクを貼ることを防ぐ。
+function findSheetRowForRow(row) {
+  const planned = row && row.planned;
+  const parsed = getParsedSheetRows();
+
+  if (!planned || !parsed) return null;
+
+  // 時刻を落として日付だけで比較する
+  const target = new Date(
+    planned.getFullYear(),
+    planned.getMonth(),
+    planned.getDate()
+  );
+
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    const p = parsed[i];
+    if (!p.parts || p.year === null) continue;
+
+    const { sm, sd, em, ed } = p.parts;
+
+    // 12/28〜1/3 のような年またぎは終了側の年を1つ進める
+    const sy = p.year;
+    const ey = em < sm ? p.year + 1 : p.year;
+
+    const start = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+
+    if (target >= start && target <= end) {
+      return {
+        period: {
+          start,
+          end,
+          label: String((p.row && p.row[0]) || '')
+            .replace(/\s*\n\s*/g, ' ')
+            .trim(),
+        },
+        html: (p.row && p.row[1]) || '',
+      };
+    }
+  }
+
+  return null;
+}
+
 // ------------------------------------------------------------
 // パーツ生成
 // ------------------------------------------------------------
 
-function createBlock(labelText) {
-  const block = document.createElement('div');
-  block.className = 'ep-block';
-
-  const label = document.createElement('div');
-  label.className = 'ep-label';
-  label.textContent = labelText;
-
-  block.appendChild(label);
-
-  return block;
+function createCell(text, className) {
+  const cell = document.createElement('td');
+  cell.className = className || '';
+  cell.textContent = text;
+  return cell;
 }
 
-function createValue(text, modifier) {
-  const value = document.createElement('div');
-  value.className = 'ep-value' + (modifier ? ` ${modifier}` : '');
-  value.textContent = text;
-  return value;
+function createPlannedCell(row) {
+  const cell = document.createElement('td');
+  cell.className = 'col-date';
+
+  if (!row.planned) {
+    cell.textContent = '—';
+    cell.classList.add('warn');
+    cell.title = '第1回配信日時が未登録です';
+    return cell;
+  }
+
+  cell.textContent = fmtPlannedShort(row.planned);
+  cell.title = fmtYmd(row.planned);
+
+  return cell;
 }
 
-function createSubValue(text) {
-  const value = document.createElement('div');
-  value.className = 'ep-subvalue';
-  value.textContent = text;
-  value.title = text;
-  return value;
+function createLine(text, className) {
+  const line = document.createElement('div');
+  line.className = 'line' + (className ? ` ${className}` : '');
+  line.textContent = text;
+  line.title = text;
+  return line;
 }
 
-function createCopyButton(text, label, toastMessage) {
+function createEmptyRow(colspan, text) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+
+  td.colSpan = colspan;
+  td.className = 'empty';
+  td.textContent = text;
+
+  tr.appendChild(td);
+
+  return tr;
+}
+
+// コピー内容は押した時点で組み立てる。
+// 記事IDは画面で書き換わるため、描画時のテキストを持たせない。
+function createCopyButton(label, getText, toastMessage, modifier) {
   const button = document.createElement('button');
 
   button.type = 'button';
-  button.className = 'copy mini';
+  button.className = 'copy mini' + (modifier ? ` ${modifier}` : '');
   button.textContent = label;
 
-  copyTexts.push(text);
-  button.dataset.copyIndex = String(copyTexts.length - 1);
-  button.dataset.copyLabel = toastMessage;
+  button.addEventListener('click', () => {
+    if (button.disabled) return;
+
+    const text = getText();
+
+    if (!text) {
+      showToast('コピーする内容がありません');
+      return;
+    }
+
+    copyText(text).then((ok) => {
+      if (ok) {
+        button.classList.add('copied');
+        showToast(toastMessage);
+      } else {
+        showToast('コピーできませんでした');
+      }
+    });
+  });
+
+  return button;
+}
+
+function createDisabledButton(label, reason) {
+  const button = document.createElement('button');
+
+  button.type = 'button';
+  button.className = 'copy mini strong';
+  button.textContent = label;
+  button.disabled = true;
+  button.title = reason || '';
 
   return button;
 }

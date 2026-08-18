@@ -10,7 +10,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>再掲連載作成アシスタント <span class="ver">Ver.0.1</span></h1>
+    <h1>再掲連載作成アシスタント <span class="ver">Ver.0.3</span></h1>
 
     <div class="search-row">
       <label for="code-input">カテゴリコード</label>
@@ -29,36 +29,110 @@
     <ul id="warnings-list"></ul>
   </div>
 
-  <!-- 今回の再掲情報 -->
-  <section id="section-current" class="block" hidden>
-    <h2>今回の再掲情報</h2>
-    <div class="current-info">
-      <p class="book-title" id="current-title"></p>
-      <p class="meta">
-        <span>カテゴリ：<b id="current-code"></b></span>
-        <span>全<b id="current-count"></b>回</span>
-        <span>連載分類：<b id="current-type"></b></span>
+  <!-- ============================================================
+       共通エリア（タブの上）
+       これから作る再掲連載の基本情報と、参照元にする過去連載
+       ============================================================ -->
+  <section id="section-common" class="block" hidden>
+    <div class="common-card">
+      <dl class="common-grid">
+        <div class="common-item">
+          <dt>書籍タイトル</dt>
+          <dd id="series-title" class="ellip"></dd>
+        </div>
+        <div class="common-item">
+          <dt>カテゴリコード</dt>
+          <dd id="series-code" class="mono"></dd>
+        </div>
+        <div class="common-item">
+          <dt>第1回配信日時</dt>
+          <dd id="series-first" class="mono"></dd>
+        </div>
+        <div class="common-item">
+          <dt>制作No</dt>
+          <dd id="series-prodno" class="mono"></dd>
+        </div>
+      </dl>
+
+      <div class="source-row">
+        <label for="source-select">参照元連載</label>
+        <select id="source-select"></select>
+        <span id="source-status" class="source-status"></span>
+      </div>
+
+      <div class="status-row">
+        <span id="sheet-status" class="note"></span>
+        <a id="kintone-link" class="ext-link" href="#" target="_blank" rel="noopener" hidden>kintoneで開く</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       タブ
+       ============================================================ -->
+  <section id="section-tabs" class="block" hidden>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab is-active" id="tab-prev"
+              role="tab" aria-selected="true" aria-controls="panel-prev"
+              data-tab="prev">① 前回記事</button>
+      <button type="button" class="tab" id="tab-bottom"
+              role="tab" aria-selected="false" aria-controls="panel-bottom"
+              data-tab="bottom">② 記事下</button>
+    </div>
+
+    <!-- ---- ① 前回記事 ---- -->
+    <div class="tabpanel" id="panel-prev" role="tabpanel" aria-labelledby="tab-prev">
+
+      <div class="bulk">
+        <label for="bulk-input">記事IDを一括貼り付け</label>
+        <textarea id="bulk-input" rows="4" spellcheck="false"
+                  placeholder="30001&#10;30002&#10;30003"></textarea>
+        <div class="bulk-actions">
+          <button type="button" id="bulk-apply" class="primary small">各回に反映</button>
+          <button type="button" id="bulk-clear" class="copy mini">記事IDをすべて消す</button>
+          <span id="bulk-status" class="note"></span>
+        </div>
+      </div>
+
+      <table class="grid grid-prev">
+        <thead>
+          <tr>
+            <th class="col-ep">回</th>
+            <th class="col-date">公開予定</th>
+            <th class="col-id">今回の記事ID</th>
+            <th class="col-prev">前回記事</th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="prev-body"></tbody>
+      </table>
+
+    </div>
+
+    <!-- ---- ② 記事下 ---- -->
+    <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
+
+      <p class="hint">
+        「この話の続きを読む」は参照元連載の1つ後の回を使います（今回の第1回 → 参照元の第2回）。
+        記事下まとめてコピーは、続きを読む → 連載一覧 → イチオシ の順で1つにまとめます。
       </p>
-    </div>
-  </section>
 
-  <!-- 参照元選択 -->
-  <section id="section-source" class="block" hidden>
-    <h2>「この話の続きを読む」の参照元</h2>
-    <p class="hint">元連載を選んでください。自動確定はしません。選び直すと記事一覧の「続きを読む」が再計算されます。</p>
-    <div class="source-row">
-      <select id="source-select"></select>
-      <span id="source-status" class="source-status"></span>
-    </div>
-  </section>
+      <table class="grid grid-bottom">
+        <thead>
+          <tr>
+            <th class="col-ep">回</th>
+            <th class="col-date">公開予定</th>
+            <th class="col-next">この話の続きを読む</th>
+            <th class="col-sheet">記事下（連載一覧＋イチオシ）</th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="bottom-body"></tbody>
+      </table>
 
-  <!-- 記事一覧 -->
-  <section id="section-articles" class="block" hidden>
-    <div class="panel-head">
-      <h2>記事一覧</h2>
-      <span id="articles-count" class="note"></span>
     </div>
-    <div id="article-list" class="article-list"></div>
+
   </section>
 
 </main>
