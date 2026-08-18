@@ -45,8 +45,16 @@ const state = {
   // 回数を戻したときに入力し直さずに済むようにする（回数 → 記事ID）
   idStash: new Map(),
 
+  // 今回の記事タイトルも同じく回数ごとに退避する（回数 → タイトル）。
+  // 10回 → 8回 → 10回 と戻したときに入力し直さずに済むようにする
+  titleStash: new Map(),
+
+  // コピー済み表示も回数ごとに退避する（回数 → コピーしたHTML）。
+  // 中身が変わっていれば updatePrevRow() が解除するので、そのまま戻してよい
+  copiedStash: new Map(),
+
   // 作業行。再掲連載回数ぶん作る
-  // { number, label, isFinal, planned, articleId, el }
+  // { number, label, isFinal, planned, articleId, articleTitle, copiedHtml, el }
   rows: [],
 
   // スプレッドシート「毎月の記事下リンク」。rows は [B列, C列] の配列
@@ -199,10 +207,11 @@ el.bulkClear.addEventListener('click', () => {
   clearArticleIds();
 });
 
-// 記事IDは行ごとに個別入力もできる。
+// 記事ID・記事タイトルは行ごとに個別入力もできる。
 // 入力した行の値は「次の行の前回記事」にだけ効くので、そこだけ更新する。
+// （自分の行の前回記事欄・コピーボタンは1つ前の行の値で決まるため動かさない）
 el.prevBody.addEventListener('input', (event) => {
-  const input = event.target.closest('input.id-input');
+  const input = event.target.closest('input.id-input, input.title-input');
 
   if (!input) return;
 
@@ -210,7 +219,14 @@ el.prevBody.addEventListener('input', (event) => {
 
   if (!Number.isInteger(index) || !state.rows[index]) return;
 
-  state.rows[index].articleId = input.value;
+  const row = state.rows[index];
+
+  if (input.classList.contains('id-input')) {
+    row.articleId = input.value;
+  } else {
+    row.articleTitle = input.value;
+    updateTitleCount(row);
+  }
 
   updatePrevRow(index + 1);
 });
@@ -288,6 +304,8 @@ async function fetchReprintData() {
     // カテゴリコードが変わったので、前のレコードの入力は引き継がない
     state.rows = [];
     state.idStash.clear();
+    state.titleStash.clear();
+    state.copiedStash.clear();
     state.sourceCount = 0;
     state.episodeCount = 0;
     setBulkStatus('');
@@ -338,6 +356,8 @@ function resetView() {
   state.sourceCount = 0;
   state.episodeCount = 0;
   state.idStash.clear();
+  state.titleStash.clear();
+  state.copiedStash.clear();
   state.rows = [];
 
   renderCountControl();
@@ -653,7 +673,7 @@ function buildEpisodeMap(articles) {
 // ------------------------------------------------------------
 
 function buildRows() {
-  stashRowIds();
+  stashRowInputs();
 
   state.rows = [];
 
@@ -676,16 +696,23 @@ function buildRows() {
       planned: base ? addDays(base, index) : null,
 
       articleId: state.idStash.get(number) || '',
+      articleTitle: state.titleStash.get(number) || '',
+
+      // コピー済み表示の根拠。この回で実際にコピーしたHTMLを覚えておく
+      copiedHtml: state.copiedStash.get(number) || '',
+
       el: null,
     });
   }
 }
 
-// 行を作り直す前に、今表示している記事IDを回数ごとに退避する。
-// 空にした行も空のまま覚える（消したはずのIDが復活しないように）
-function stashRowIds() {
+// 行を作り直す前に、今表示している記事ID・記事タイトルを回数ごとに退避する。
+// 空にした行も空のまま覚える（消したはずの入力が復活しないように）
+function stashRowInputs() {
   for (const row of state.rows) {
     state.idStash.set(row.number, String(row.articleId || ''));
+    state.titleStash.set(row.number, String(row.articleTitle || ''));
+    state.copiedStash.set(row.number, String(row.copiedHtml || ''));
   }
 }
 
@@ -809,17 +836,24 @@ function switchTab(name) {
 // 過去の再掲記事をkintoneから取ってくることはしない。
 // ============================================================
 
+// タイトル未入力のままでもHTMLは作れる。その場合の差し込み文字
+const PREV_TITLE_FALLBACK = '●▼■';
+
+const PREV_COPY_LABEL = 'HTMLコピー';
+const PREV_COPIED_LABEL = 'コピー済み ✓';
+
 function renderPrevTable() {
   el.prevBody.textContent = '';
 
   if (!state.rows.length) {
     el.prevBody.appendChild(
-      createEmptyRow(4, '参照元連載を選択すると作業行を作成します')
+      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
     );
     return;
   }
 
-  // 前回記事タブは記事IDの入力に集中する。公開予定日は記事下タブに出す
+  // 前回記事タブは記事ID・記事タイトルの入力に集中する。
+  // 公開予定日は記事下タブに出す
   state.rows.forEach((row, index) => {
     const tr = document.createElement('tr');
 
@@ -844,25 +878,48 @@ function renderPrevTable() {
     idCell.appendChild(input);
     tr.appendChild(idCell);
 
+    // ---- 今回の記事タイトル ----
+    // 次の回の【前回の記事を読む】に使う。必須ではない
+    const titleCell = document.createElement('td');
+    titleCell.className = 'col-title';
+
+    const titleInput = document.createElement('input');
+
+    titleInput.type = 'text';
+    titleInput.className = 'title-input';
+    titleInput.autocomplete = 'off';
+    titleInput.spellcheck = false;
+    titleInput.placeholder = '夫が半身不随になったあの日から…';
+    titleInput.value = row.articleTitle;
+    titleInput.dataset.index = String(index);
+    titleInput.setAttribute('aria-label', `${row.label}の今回の記事タイトル`);
+
+    const titleCount = document.createElement('div');
+    titleCount.className = 'title-count';
+
+    titleCell.appendChild(titleInput);
+    titleCell.appendChild(titleCount);
+    tr.appendChild(titleCell);
+
     // ---- 前回記事 ----
     const prevCell = document.createElement('td');
     prevCell.className = 'col-prev';
     tr.appendChild(prevCell);
 
     // ---- コピー ----
+    // 第1回に前回記事は存在しないので、ボタンそのものを置かない
     const actionCell = document.createElement('td');
     actionCell.className = 'col-act';
 
-    const button = createCopyButton(
-      '前回記事HTMLをコピー',
-      () => buildPreviousHtmlFor(index),
-      '前回記事HTMLをコピーしました'
-    );
+    const button = index === 0 ? null : createPrevCopyButton(index);
 
-    actionCell.appendChild(button);
+    if (button) actionCell.appendChild(button);
+
     tr.appendChild(actionCell);
 
-    row.el = { input, prevCell, button };
+    row.el = { input, titleInput, titleCount, prevCell, button };
+
+    updateTitleCount(row);
 
     el.prevBody.appendChild(tr);
   });
@@ -870,8 +927,59 @@ function renderPrevTable() {
   state.rows.forEach((_, index) => updatePrevRow(index));
 }
 
-// 前回記事は「1つ前の行の今回の記事ID」。
-// 未入力のままコピーさせると誤ったIDのリンクが貼られるので、ボタンを無効にする。
+// 絵文字や結合文字を1文字として数えたいので Array.from() で数える。
+// 文字数の上限は設けず、入力の目安として出すだけ
+function updateTitleCount(row) {
+  if (!row || !row.el || !row.el.titleCount) return;
+
+  const length = Array.from(String(row.articleTitle || '')).length;
+
+  row.el.titleCount.textContent = `${length}文字`;
+}
+
+// コピー内容は押した時点で組み立てる。
+// コピーできたHTMLを覚えておき、中身が変わったら「コピー済み」を解除する
+function createPrevCopyButton(index) {
+  const button = document.createElement('button');
+
+  button.type = 'button';
+  button.className = 'copy mini prev-copy';
+  button.textContent = PREV_COPY_LABEL;
+
+  button.addEventListener('click', () => {
+    if (button.disabled) return;
+
+    const html = buildPreviousHtmlFor(index);
+
+    if (!html) {
+      showToast('コピーする内容がありません');
+      return;
+    }
+
+    copyText(html).then((ok) => {
+      if (!ok) {
+        showToast('コピーできませんでした');
+        return;
+      }
+
+      const row = state.rows[index];
+
+      if (row) {
+        row.copiedHtml = html;
+        state.copiedStash.set(row.number, html);
+      }
+
+      updatePrevRow(index);
+      showToast('前回記事HTMLをコピーしました');
+    });
+  });
+
+  return button;
+}
+
+// 前回記事は「1つ前の行の今回の記事ID・記事タイトル」。
+// IDが未入力のままコピーさせると誤ったリンクが貼られるので、ボタンを無効にする。
+// タイトルは未入力でもよい（HTMLでは ●▼■ を使う）
 function updatePrevRow(index) {
   const row = state.rows[index];
 
@@ -886,29 +994,66 @@ function updatePrevRow(index) {
   if (index === 0) {
     cell.textContent = 'なし';
     cell.classList.add('muted');
-
-    button.disabled = true;
-    button.title = '第1回に前回記事はありません';
     return;
   }
 
   const previous = state.rows[index - 1];
   const previousId = String(previous.articleId || '').trim();
+  const previousTitle = String(previous.articleTitle || '').trim();
 
   if (!previousId) {
     cell.textContent = '前回の記事IDを入力してください';
     cell.classList.add('warn');
 
-    button.disabled = true;
-    button.title = '前回の記事IDを入力してください';
+    if (button) {
+      button.disabled = true;
+      button.title = '前回の記事IDを入力してください';
+    }
+
+    syncPrevCopiedState(index);
     return;
   }
 
   // 「今回の記事ID」列と見間違えないよう、どの回のIDかを明示する
-  cell.textContent = `前回：${previous.label}／ID ${previousId}`;
+  cell.appendChild(
+    createLine(`前回：${previous.label}／ID ${previousId}`)
+  );
 
-  button.disabled = false;
-  button.title = '';
+  cell.appendChild(
+    previousTitle
+      ? createLine(previousTitle, 'sub ellip')
+      : createLine(
+          `タイトル未入力（HTMLでは${PREV_TITLE_FALLBACK}を使用）`,
+          'sub faint'
+        )
+  );
+
+  if (button) {
+    button.disabled = false;
+    button.title = '';
+  }
+
+  syncPrevCopiedState(index);
+}
+
+// コピーしたときのHTMLと今のHTMLを突き合わせる。
+// 前の回のID・タイトルが変わればHTMLも変わるので、そこで自動的に解除される
+function syncPrevCopiedState(index) {
+  const row = state.rows[index];
+
+  if (!row || !row.el || !row.el.button) return;
+
+  const current = buildPreviousHtmlFor(index);
+
+  if (!current || row.copiedHtml !== current) {
+    row.copiedHtml = '';
+    state.copiedStash.set(row.number, '');
+  }
+
+  const copied = Boolean(row.copiedHtml);
+
+  row.el.button.classList.toggle('copied', copied);
+  row.el.button.textContent = copied ? PREV_COPIED_LABEL : PREV_COPY_LABEL;
 }
 
 function buildPreviousHtmlFor(index) {
@@ -917,15 +1062,20 @@ function buildPreviousHtmlFor(index) {
 
   if (!previousId) return '';
 
-  return buildPreviousArticleHtml(previousId);
+  return buildPreviousArticleHtml(
+    previousId,
+    (previous && previous.articleTitle) || ''
+  );
 }
 
-function buildPreviousArticleHtml(articleId) {
+function buildPreviousArticleHtml(articleId, title) {
+  const label = String(title || '').trim() || PREV_TITLE_FALLBACK;
+
   return (
     `<p align="center">` +
     `<a href="/articles/-/${escapeHtml(articleId)}" target="_blank">` +
     `<strong>` +
-    `<span style="color:#0000CD;">【前回の記事を読む】●▼■</span>` +
+    `<span style="color:#0000CD;">【前回の記事を読む】${escapeHtml(label)}</span>` +
     `</strong>` +
     `</a>` +
     `</p>`

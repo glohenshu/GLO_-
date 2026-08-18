@@ -483,6 +483,17 @@ a:focus-visible {
 .grid-bottom .col-act { width: 168px; }
 .grid-bottom .col-next { width: 34%; }
 
+/* 前回記事タブ。20回ぶん並べても横スクロールが出ないよう、
+   記事タイトル欄に幅を寄せて他の列は必要最小限にする */
+.grid-prev .col-ep { width: 56px; }
+.grid-prev .col-id { width: 88px; }
+.grid-prev .col-title { width: auto; }
+.grid-prev .col-prev { width: 29%; }
+.grid-prev .col-act { width: 118px; }
+
+/* 1行が高くならないように詰める */
+.grid-prev td { padding-top: 4px; padding-bottom: 4px; }
+
 .col-ep {
   font-size: 12px;
   font-weight: 700;
@@ -515,6 +526,8 @@ a:focus-visible {
 }
 
 .line.warn { color: var(--warn); font-weight: 600; }
+
+.line.faint { color: var(--faint); }
 
 .line.final { color: var(--accent); font-weight: 600; }
 
@@ -551,6 +564,29 @@ a:focus-visible {
 }
 
 .id-input:focus { border-color: var(--accent); background: var(--panel); }
+
+/* 今回の記事タイトル。次の回の【前回の記事を読む】に使う */
+.title-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.title-input:focus { border-color: var(--accent); background: var(--panel); }
+
+/* 入力の目安。上限は無いので控えめに出す */
+.title-count {
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ============================================================
    ボタン
@@ -603,6 +639,15 @@ button.copy.copied {
 }
 
 button.copy.mini { padding: 3px 10px; font-size: 11px; }
+
+/* 「HTMLコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.prev-copy {
+  min-width: 94px;
+  white-space: nowrap;
+}
+
+/* 一覧を見ただけでコピー済みの回が分かるようにする */
+button.copy.prev-copy.copied { font-weight: 700; }
 
 button.copy:disabled {
   background: transparent;
@@ -670,6 +715,13 @@ button.copy.strong:hover {
   .grid .col-id { width: 96px; }
   .grid .col-act,
   .grid-bottom .col-act { width: 140px; }
+
+  .grid-prev .col-ep { width: 50px; }
+  .grid-prev .col-id { width: 78px; }
+  .grid-prev .col-prev { width: 26%; }
+  .grid-prev .col-act { width: 100px; }
+
+  button.copy.prev-copy { min-width: 84px; }
 
   .grid th, .grid td { padding-left: 5px; padding-right: 5px; }
 
