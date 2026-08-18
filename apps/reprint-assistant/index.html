@@ -60,6 +60,25 @@
         <span id="source-status" class="source-status"></span>
       </div>
 
+      <!-- 再掲連載回数。参照元の記事数を初期値にするが、ここで自由に変えられる -->
+      <div class="count-row">
+        <span class="count-label" id="count-label">再掲連載回数</span>
+
+        <div class="count-control" role="group" aria-labelledby="count-label">
+          <button type="button" id="count-minus" class="step"
+                  aria-label="再掲連載回数を1回減らす">−</button>
+          <input id="count-input" class="count-input mono" type="text"
+                 inputmode="numeric" autocomplete="off" spellcheck="false"
+                 aria-label="再掲連載回数">
+          <button type="button" id="count-plus" class="step"
+                  aria-label="再掲連載回数を1回増やす">＋</button>
+          <span class="count-unit">回</span>
+        </div>
+
+        <span id="count-source" class="note"></span>
+        <button type="button" id="count-reset" class="copy mini">参照元の回数に戻す</button>
+      </div>
+
       <div class="status-row">
         <span id="sheet-status" class="note"></span>
         <a id="kintone-link" class="ext-link" href="#" target="_blank" rel="noopener" hidden>kintoneで開く</a>
@@ -99,7 +118,6 @@
         <thead>
           <tr>
             <th class="col-ep">回</th>
-            <th class="col-date">公開予定</th>
             <th class="col-id">今回の記事ID</th>
             <th class="col-prev">前回記事</th>
             <th class="col-act"></th>
@@ -115,6 +133,7 @@
 
       <p class="hint">
         「この話の続きを読む」は参照元連載の1つ後の回を使います（今回の第1回 → 参照元の第2回）。
+        最後の行は参照元に次の回が残っていても必ず最終回として扱います。
         記事下まとめてコピーは、続きを読む → 連載一覧 → イチオシ の順で1つにまとめます。
       </p>
 

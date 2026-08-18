@@ -11,6 +11,12 @@
 
 const API_ENDPOINT = '/api/reprint-data';
 
+// 再掲連載回数の範囲。
+// 1回だけの再掲（最終回のみ）もありうるので下限は1。
+// 上限は打ち間違いで数百行を作ってしまわないための歯止め
+const MIN_EPISODE_COUNT = 1;
+const MAX_EPISODE_COUNT = 200;
+
 // ------------------------------------------------------------
 // 状態
 // ------------------------------------------------------------
@@ -29,7 +35,17 @@ const state = {
   // 参照元の「回数 → 記事」対応表
   sourceByEpisode: new Map(),
 
-  // 作業行。参照元の回数ぶん作る
+  // 選択中の参照元の記事数。「参照元の回数に戻す」の戻り先
+  sourceCount: 0,
+
+  // 実際に作る再掲連載の回数。参照元の記事数を初期値に、画面で変更できる
+  episodeCount: 0,
+
+  // 回数を減らして消えた行の記事IDを覚えておく。
+  // 回数を戻したときに入力し直さずに済むようにする（回数 → 記事ID）
+  idStash: new Map(),
+
+  // 作業行。再掲連載回数ぶん作る
   // { number, label, isFinal, planned, articleId, el }
   rows: [],
 
@@ -64,6 +80,11 @@ const el = {
   seriesProdNo: document.getElementById('series-prodno'),
   sourceSelect: document.getElementById('source-select'),
   sourceStatus: document.getElementById('source-status'),
+  countInput: document.getElementById('count-input'),
+  countMinus: document.getElementById('count-minus'),
+  countPlus: document.getElementById('count-plus'),
+  countSource: document.getElementById('count-source'),
+  countReset: document.getElementById('count-reset'),
   sheetStatus: document.getElementById('sheet-status'),
   kintoneLink: document.getElementById('kintone-link'),
 
@@ -102,6 +123,52 @@ el.sourceSelect.addEventListener('change', () => {
   buildRows();
   renderPrevTable();
   renderBottomTable();
+});
+
+// ---- 再掲連載回数 ----
+
+el.countMinus.addEventListener('click', () => {
+  setEpisodeCount(state.episodeCount - 1);
+});
+
+el.countPlus.addEventListener('click', () => {
+  setEpisodeCount(state.episodeCount + 1);
+});
+
+el.countReset.addEventListener('click', () => {
+  setEpisodeCount(state.sourceCount);
+});
+
+// 入力途中（空欄・全角のみ等）はまだ反映しない。
+// 数として読める値になった時点で行を作り直す
+el.countInput.addEventListener('input', () => {
+  const value = parseCountInput(el.countInput.value);
+
+  if (!Number.isFinite(value) || value < MIN_EPISODE_COUNT) return;
+
+  setEpisodeCount(value);
+});
+
+// 確定時に表示を正規化する。読めない値のときは今の回数に戻す
+el.countInput.addEventListener('change', () => {
+  commitCountInput();
+});
+
+el.countInput.addEventListener('blur', () => {
+  commitCountInput();
+});
+
+el.countInput.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    setEpisodeCount(state.episodeCount + (event.key === 'ArrowUp' ? 1 : -1));
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    commitCountInput();
+  }
 });
 
 el.tabButtons.forEach((button) => {
@@ -220,6 +287,9 @@ async function fetchReprintData() {
 
     // カテゴリコードが変わったので、前のレコードの入力は引き継がない
     state.rows = [];
+    state.idStash.clear();
+    state.sourceCount = 0;
+    state.episodeCount = 0;
     setBulkStatus('');
 
     const source = json.source || {};
@@ -265,7 +335,12 @@ function resetView() {
   state.selectedSource = null;
   state.sourceError = '';
   state.sourceByEpisode = new Map();
+  state.sourceCount = 0;
+  state.episodeCount = 0;
+  state.idStash.clear();
   state.rows = [];
+
+  renderCountControl();
 
   el.warnings.hidden = true;
   el.warningsList.textContent = '';
@@ -391,6 +466,8 @@ function renderSourceCandidates() {
   applySourceSelection(el.sourceSelect.value);
 }
 
+// 参照元を選び直した時点で、再掲連載回数はその参照元の記事数に戻す。
+// 回数を手で変えていても、参照元が変われば基準そのものが変わるため。
 function applySourceSelection(categoryCode) {
   state.selectedSource =
     state.sourceCandidates.find(
@@ -401,18 +478,128 @@ function applySourceSelection(categoryCode) {
     state.selectedSource ? state.selectedSource.articles : []
   );
 
+  state.sourceCount = state.selectedSource
+    ? countSourceArticles(state.selectedSource)
+    : 0;
+
+  state.episodeCount = clampEpisodeCount(state.sourceCount);
+
+  renderSourceStatus();
+  renderCountControl();
+}
+
+function countSourceArticles(candidate) {
+  if (Array.isArray(candidate.articles)) return candidate.articles.length;
+
+  const count = Number(candidate.count);
+
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+function renderSourceStatus() {
   if (!state.selectedSource) {
-    el.sourceStatus.textContent =
-      state.sourceError || '参照元が未選択です';
+    el.sourceStatus.textContent = state.sourceError || '参照元が未選択です';
     el.sourceStatus.classList.add('warn');
     return;
   }
 
-  const count = Number(state.selectedSource.count || 0);
+  if (!state.episodeCount) {
+    el.sourceStatus.textContent = '参照元に記事がありません';
+    el.sourceStatus.classList.add('warn');
+    return;
+  }
 
   el.sourceStatus.textContent =
-    `第1回〜最終回の${count}行を作成しました`;
+    state.episodeCount === 1
+      ? '最終回のみの1行を作成しました'
+      : `第1回〜最終回の${state.episodeCount}行を作成しました`;
+
   el.sourceStatus.classList.remove('warn');
+}
+
+// ------------------------------------------------------------
+// 再掲連載回数
+//
+// 参照元の記事数を初期値にするが、実際に何回で再掲するかは運用の判断。
+// 回数を変えたら作業行を作り直す。入力済みの記事IDは
+// state.idStash に退避してあるので、行が復活したときに戻る。
+// ------------------------------------------------------------
+
+// min には、参照元に記事が無いときの0行を許すかどうかを渡す。
+// 画面から回数を変える場合は必ず1以上にする
+function clampEpisodeCount(value, min = 0) {
+  const count = Math.floor(Number(value));
+
+  if (!Number.isFinite(count) || count < min) return min;
+
+  return Math.min(count, MAX_EPISODE_COUNT);
+}
+
+// 全角で入力されることがあるため半角に直してから読む
+function parseCountInput(text) {
+  const digits = String(text || '')
+    .replace(/[０-９]/g, (char) =>
+      String.fromCharCode(char.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/[^0-9]/g, '');
+
+  return digits ? Number(digits) : NaN;
+}
+
+function commitCountInput() {
+  const value = parseCountInput(el.countInput.value);
+
+  setEpisodeCount(Number.isFinite(value) ? value : state.episodeCount);
+}
+
+function setEpisodeCount(value) {
+  // 参照元が未選択のうちは回数という概念自体が無い
+  if (!state.selectedSource || !state.sourceCount) {
+    renderCountControl();
+    return;
+  }
+
+  const next = clampEpisodeCount(value, MIN_EPISODE_COUNT);
+
+  if (next !== state.episodeCount) {
+    state.episodeCount = next;
+
+    buildRows();
+    renderPrevTable();
+    renderBottomTable();
+    renderSourceStatus();
+  }
+
+  renderCountControl();
+}
+
+function renderCountControl() {
+  const hasSource = Boolean(state.selectedSource) && state.sourceCount > 0;
+  const count = state.episodeCount;
+
+  el.countInput.disabled = !hasSource;
+  el.countMinus.disabled = !hasSource || count <= MIN_EPISODE_COUNT;
+  el.countPlus.disabled = !hasSource || count >= MAX_EPISODE_COUNT;
+  el.countReset.disabled = !hasSource || count === state.sourceCount;
+
+  // 入力中のカーソルが飛ばないよう、違うときだけ書き換える
+  const text = hasSource ? String(count) : '';
+
+  if (el.countInput.value !== text) el.countInput.value = text;
+
+  if (!hasSource) {
+    el.countSource.textContent = '参照元：—';
+    el.countSource.classList.remove('warn');
+    return;
+  }
+
+  const diff = count - state.sourceCount;
+
+  el.countSource.textContent = diff
+    ? `参照元：${state.sourceCount}回（${diff > 0 ? '+' : '−'}${Math.abs(diff)}回）`
+    : `参照元：${state.sourceCount}回`;
+
+  el.countSource.classList.toggle('warn', diff !== 0);
 }
 
 // 参照先は公開日時ではなく回数で突き合わせる。
@@ -457,39 +644,48 @@ function buildEpisodeMap(articles) {
 // ------------------------------------------------------------
 // 作業行の生成
 //
-// 行数は参照元連載の回数に合わせる。
-// 最終行は「最終回」とし、記事下では続きを読むを作らない。
-// 参照元を選び直しても、入力済みの記事IDは同じ回に残す。
+// 行数は再掲連載回数（初期値は参照元の記事数）に合わせる。
+// 最後の行は参照元に次の回が残っていても必ず「最終回」とし、
+// 記事下では続きを読むの代わりに固定文言を出す。
+//
+// 入力済みの記事IDは回数で覚えておき、
+// 参照元を選び直しても、回数を増減しても同じ回に戻す。
 // ------------------------------------------------------------
 
 function buildRows() {
-  const keptIds = state.rows.map((row) => row.articleId);
+  stashRowIds();
 
   state.rows = [];
 
-  const source = state.selectedSource;
+  const total = state.episodeCount;
 
-  if (!source || !Array.isArray(source.articles) || !source.articles.length) {
-    return;
-  }
+  if (!state.selectedSource || !total) return;
 
   const base = getFirstDeliveryParts();
-  const total = source.articles.length;
 
   for (let index = 0; index < total; index++) {
+    const number = index + 1;
     const isFinal = index === total - 1;
 
     state.rows.push({
-      number: index + 1,
-      label: isFinal ? '最終回' : `第${index + 1}回`,
+      number,
+      label: isFinal ? '最終回' : `第${number}回`,
       isFinal,
 
       // 再掲は毎日更新。第1回配信日時から1日ずつ足す
       planned: base ? addDays(base, index) : null,
 
-      articleId: keptIds[index] || '',
+      articleId: state.idStash.get(number) || '',
       el: null,
     });
+  }
+}
+
+// 行を作り直す前に、今表示している記事IDを回数ごとに退避する。
+// 空にした行も空のまま覚える（消したはずのIDが復活しないように）
+function stashRowIds() {
+  for (const row of state.rows) {
+    state.idStash.set(row.number, String(row.articleId || ''));
   }
 }
 
@@ -618,16 +814,16 @@ function renderPrevTable() {
 
   if (!state.rows.length) {
     el.prevBody.appendChild(
-      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
+      createEmptyRow(4, '参照元連載を選択すると作業行を作成します')
     );
     return;
   }
 
+  // 前回記事タブは記事IDの入力に集中する。公開予定日は記事下タブに出す
   state.rows.forEach((row, index) => {
     const tr = document.createElement('tr');
 
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
-    tr.appendChild(createPlannedCell(row));
 
     // ---- 今回の記事ID ----
     const idCell = document.createElement('td');
@@ -756,12 +952,22 @@ function applyBulkIds() {
     return;
   }
 
-  state.rows.forEach((row, index) => {
-    if (index < ids.length) {
-      row.articleId = ids[index];
+  // 行数を超えた分も回数ごとに退避しておく。
+  // 再掲連載回数を増やしたときに貼り直さずに済む
+  ids.forEach((id, index) => {
+    const number = index + 1;
 
-      if (row.el) row.el.input.value = row.articleId;
-    }
+    if (number > MAX_EPISODE_COUNT) return;
+
+    state.idStash.set(number, id);
+
+    const row = state.rows[index];
+
+    if (!row) return;
+
+    row.articleId = id;
+
+    if (row.el) row.el.input.value = id;
   });
 
   state.rows.forEach((_, index) => updatePrevRow(index));
@@ -771,7 +977,9 @@ function applyBulkIds() {
   let message = `${applied}件を反映しました`;
 
   if (ids.length > state.rows.length) {
-    message += `（${ids.length - state.rows.length}件は行数を超えたため未使用）`;
+    message +=
+      `（${ids.length - state.rows.length}件は再掲連載回数を超えています。` +
+      `回数を増やすと反映されます）`;
   } else if (ids.length < state.rows.length) {
     // 貼り付けた件数より後ろの回は書き換えない。
     // 前に入れたIDが残っていることがあるので「未入力」と決めつけない
@@ -787,6 +995,10 @@ function applyBulkIds() {
 }
 
 function clearArticleIds() {
+  // 退避してある分（今は表示していない回）も一緒に消す。
+  // 消したつもりのIDが回数を戻したときに復活しないようにする
+  state.idStash.clear();
+
   state.rows.forEach((row) => {
     row.articleId = '';
 
@@ -912,9 +1124,17 @@ function createNextCell(link) {
   }
 
   if (link.kind === 'no-episode') {
+    cell.appendChild(createLine('参照元に該当回がありません', 'warn'));
+
     cell.appendChild(
-      createLine(`参照元に第${link.nextNumber}回がありません`, 'warn')
+      createLine(
+        state.sourceCount && link.nextNumber > state.sourceCount
+          ? `参照元は${state.sourceCount}回まで（第${link.nextNumber}回が必要です）`
+          : `参照元に第${link.nextNumber}回が見つかりません`,
+        'sub'
+      )
     );
+
     return cell;
   }
 

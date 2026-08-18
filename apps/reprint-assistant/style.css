@@ -261,6 +261,80 @@ a:focus-visible {
 
 .source-status.warn { color: var(--warn); font-weight: 600; }
 
+/* ---- 再掲連載回数 ---- */
+
+.count-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.count-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+}
+
+.count-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.count-control .step {
+  appearance: none;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--sub);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.count-control .step:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.count-control .step:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.count-input {
+  width: 56px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  text-align: center;
+}
+
+.count-input:focus { border-color: var(--accent); }
+
+.count-input:disabled {
+  background: var(--code-bg);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.count-unit {
+  font-size: 12px;
+  color: var(--sub);
+}
+
 /* ---- 取得状況 ---- */
 
 .status-row {
