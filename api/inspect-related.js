@@ -1,7 +1,19 @@
 export default async function handler(req, res) {
-  const base = String(process.env.KINTONE_BASE_URL || '').trim();
-  const token = String(process.env.KINTONE_API_TOKEN || '').trim();
-  const appId = String(process.env.KINTONE_APP_ID || '').trim();
+  const base = String(
+    process.env.KINTONE_BASE_URL || ''
+  ).trim();
+
+  const token = String(
+    process.env.KINTONE_API_TOKEN || ''
+  ).trim();
+
+  const articleToken = String(
+    process.env.KINTONE_ARTICLE_API_TOKEN || ''
+  ).trim();
+
+  const appId = String(
+    process.env.KINTONE_APP_ID || ''
+  ).trim();
 
   if (!base || !token || !appId) {
     return res.status(500).json({
@@ -13,9 +25,16 @@ export default async function handler(req, res) {
     const url =
       `${base}/k/v1/app/form/fields.json?app=${encodeURIComponent(appId)}`;
 
+    const apiTokens = [
+      token,
+      articleToken,
+    ]
+      .filter(Boolean)
+      .join(',');
+
     const response = await fetch(url, {
       headers: {
-        'X-Cybozu-API-Token': token,
+        'X-Cybozu-API-Token': apiTokens,
       },
     });
 
@@ -33,7 +52,10 @@ export default async function handler(req, res) {
 
     if (!target) {
       const candidates = Object.values(properties)
-        .filter((field) => field?.type === 'REFERENCE_TABLE')
+        .filter(
+          (field) =>
+            field?.type === 'REFERENCE_TABLE'
+        )
         .map((field) => ({
           code: field.code,
           label: field.label,
@@ -55,29 +77,59 @@ export default async function handler(req, res) {
       });
     }
 
-    const ref = target.referenceTable || {};
+    const referenceTableIsNull =
+      target.referenceTable === null;
+
+    const ref =
+      target.referenceTable || {};
 
     return res.status(200).json({
       status: 'ok',
-      fieldCode: target.code,
-      label: target.label,
-      type: target.type,
 
-      relatedAppId: ref.relatedApp?.app || '',
-      relatedAppCode: ref.relatedApp?.code || '',
+      fieldCode:
+        target.code || '記事一覧_0',
 
-      conditionField: ref.condition?.field || '',
-      relatedField: ref.condition?.relatedField || '',
+      label:
+        target.label || '',
 
-      filterCond: ref.filterCond || '',
-      sort: ref.sort || '',
-      displayFields: ref.displayFields || [],
-      size: ref.size || '',
+      type:
+        target.type || '',
+
+      referenceTableIsNull,
+
+      articleTokenConfigured:
+        Boolean(articleToken),
+
+      relatedAppId:
+        ref.relatedApp?.app || '',
+
+      relatedAppCode:
+        ref.relatedApp?.code || '',
+
+      conditionField:
+        ref.condition?.field || '',
+
+      relatedField:
+        ref.condition?.relatedField || '',
+
+      filterCond:
+        ref.filterCond || '',
+
+      sort:
+        ref.sort || '',
+
+      displayFields:
+        ref.displayFields || [],
+
+      size:
+        ref.size || '',
     });
 
   } catch (e) {
     return res.status(500).json({
-      error: String(e.message || e),
+      error: String(
+        e.message || e
+      ),
     });
   }
 }
