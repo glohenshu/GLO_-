@@ -708,7 +708,8 @@ function updatePrevRow(index) {
     return;
   }
 
-  cell.textContent = `${previous.label}／ID ${previousId}`;
+  // 「今回の記事ID」列と見間違えないよう、どの回のIDかを明示する
+  cell.textContent = `前回：${previous.label}／ID ${previousId}`;
 
   button.disabled = false;
   button.title = '';
@@ -743,8 +744,10 @@ function applyBulkIds() {
     return;
   }
 
+  // スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
+  // 区切れないと1行目に全IDが入ってしまうため、どの改行でも分割する
   const ids = String(el.bulkInput.value || '')
-    .split(/\r?\n/)
+    .split(/[\r\n]+/)
     .map((line) => line.trim())
     .filter(Boolean);
 
@@ -770,7 +773,14 @@ function applyBulkIds() {
   if (ids.length > state.rows.length) {
     message += `（${ids.length - state.rows.length}件は行数を超えたため未使用）`;
   } else if (ids.length < state.rows.length) {
-    message += `（残り${state.rows.length - ids.length}回は未入力）`;
+    // 貼り付けた件数より後ろの回は書き換えない。
+    // 前に入れたIDが残っていることがあるので「未入力」と決めつけない
+    const rest = state.rows.slice(ids.length);
+    const kept = rest.filter((row) => String(row.articleId || '').trim()).length;
+
+    message += kept
+      ? `（残り${rest.length}回のうち${kept}回は前の入力のままです）`
+      : `（残り${rest.length}回は未入力）`;
   }
 
   setBulkStatus(message, ids.length > state.rows.length);
@@ -802,7 +812,8 @@ function setBulkStatus(message, isWarn = false) {
 //     ↓
 //   イチオシ
 //
-// 連載一覧・イチオシはスプレッドシートC列そのもの。
+// 連載一覧・イチオシはスプレッドシートC列を元にする。
+// ただし再掲連載では【注目記事】【人気記事】の段落を落とす（後述）。
 // 新連載作成アシスタントの <p>あ</p> 3行はここでは付けない。
 // ============================================================
 
@@ -1048,10 +1059,34 @@ function buildFinalEpisodeHtml() {
   return '<p>本連載は今回で最終回です。ご愛読ありがとうございました。</p>';
 }
 
+// 再掲連載では【注目記事】【人気記事】を載せない。
+//
+// C列は「連載記事一覧 → 【イチオシ記事】 →【注目記事】→（定型文）」の並び。
+// 古い行には【人気記事】も入っている。どちらも1つの <p>…</p> に収まっているので、
+// その段落だけを丸ごと落とす。残すのは【イチオシ記事】。
+//
+// 判定は必ず【注目記事】【人気記事】という記事ラベルで行う。
+// 「注目」「人気」だけで判定すると、書籍タイトルの
+// ［注目連載ピックアップ］［人気連載ピックアップ］まで巻き込む。
+//
+// 実データの注意点：
+//   ・段落は <p> と <p align="center"> の両方がある
+//   ・見出しは <strong><span> の内側にあり、途中に改行が入る行もある
+// このため「同じ段落の中にラベルがある」ことを
+// </p> をまたがない先読みで確かめてから、その段落の終わりまでを消す。
+const DROP_PARAGRAPH_RE =
+  /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【(?:注目|人気)記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
+
+function removeDroppedParagraphs(html) {
+  return String(html || '').replace(DROP_PARAGRAPH_RE, '');
+}
+
 // スプレッドシートC列HTMLのプレースホルダーを、
 // 今回入力したカテゴリコードと書籍タイトルに置き換える。
 function buildArticleBottomHtml(cHtml) {
-  let c = String(cHtml || '').trim();
+  // 置換より先に落とす。
+  // 書籍タイトルを入れてから消すと、タイトル次第で判定が変わりうる
+  let c = removeDroppedParagraphs(String(cHtml || '').trim()).trim();
 
   if (!c) return '';
 
