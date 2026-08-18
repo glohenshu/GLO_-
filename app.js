@@ -602,40 +602,165 @@ document.querySelectorAll('input[name="source-type"]').forEach((r) => {
 // ⑤ 本文テンプレート
 // ============================================================
 
-// B列の期間文字列（例「8/23（日）～8/29（土）」）を日付範囲に変換
-function parsePeriod(text, baseYear, deliveryMonth) {
-  const nums = [...String(text).matchAll(/(\d{1,2})\/(\d{1,2})/g)];
-  if (nums.length < 2) return null;
-  let [sm, sd] = [+nums[0][1], +nums[0][2]];
-  let [em, ed] = [+nums[1][1], +nums[1][2]];
+// Date → 「2026/1/3」表記
+function fmtYmd(d) {
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
 
-  let sy = baseYear, ey = baseYear;
-  // 年またぎ補正（12月末～1月初など）
-  if (em < sm) ey = sy + 1;
-  if (deliveryMonth === 1 && sm === 12) { sy = baseYear - 1; ey = baseYear; }
-  if (deliveryMonth === 12 && sm === 1) { sy = baseYear + 1; ey = baseYear + 1; }
+// B列の期間文字列から 月日 を取り出す
+//
+// 実データには以下の表記ゆれがある。
+//   「8/23（日）〜8/29（土）」  終了側に月あり
+//   「6/1（日）～7（土）」      終了側は日のみ（月は開始と同じ）
+//   「4/1～15」                 曜日なし・終了側は日のみ
+// 期間は2行目以降に入ることもあるため、`/` を含む行を対象にする。
+// 波ダッシュは ～(U+FF5E) と 〜(U+301C) の両方が混在している。
+function parsePeriodParts(text) {
+  const line = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => /\d{1,2}\s*\/\s*\d{1,2}/.test(l));
 
-  return {
-    start: new Date(sy, sm - 1, sd),
-    end: new Date(ey, em - 1, ed),
-    label: String(text).trim(),
-  };
+  if (!line) return null;
+
+  const m = line.match(
+    /(\d{1,2})\s*\/\s*(\d{1,2})[^0-9]*?[～〜~][^0-9]*?(?:(\d{1,2})\s*\/\s*)?(\d{1,2})/
+  );
+
+  if (!m) return null;
+
+  const sm = +m[1];
+  const sd = +m[2];
+  const em = m[3] ? +m[3] : sm;
+  const ed = +m[4];
+
+  if (!sm || !sd || !em || !ed) return null;
+  if (sm > 12 || em > 12 || sd > 31 || ed > 31) return null;
+
+  return { sm, sd, em, ed };
+}
+
+// シートのB列には年が書かれていないため、行ごとの実際の年を推定する。
+//
+// シートは時系列順に積み上がっており、1年以上分の行が入っている。
+// そのため「全行を配信年とみなす」と、別の年の同じ週の行に
+// 一致してしまい、古い（または新しい）C列HTMLを黙って返してしまう。
+//
+// 最終行を「今日に最も近い年」と仮定し、そこから上方向へ走査して
+// 月が巻き戻った（上の行なのに月が大きい）ところで年を1つ戻す。
+// 最終行を anchorYear として、下から上へ年を割り当てる
+function assignYearsFrom(parsed, idxs, anchorYear) {
+  let year = anchorYear;
+  let prevSm = null;
+
+  for (let k = idxs.length - 1; k >= 0; k--) {
+    const p = parsed[idxs[k]];
+    if (prevSm !== null && p.parts.sm > prevSm) year -= 1;
+    p.year = year;
+    prevSm = p.parts.sm;
+  }
+}
+
+
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+// B列には「8/23（日）」のように曜日が書かれている行が多い。
+// 曜日は年を一意に特定できるため、割り当てた年の正しさを採点できる。
+function scoreWeekdays(parsed, idxs) {
+  let score = 0;
+
+  for (const i of idxs) {
+    const p = parsed[i];
+    const m = String(p.row?.[0] || '').match(
+      /(\d{1,2})\s*\/\s*(\d{1,2})\s*[（(]\s*([日月火水木金土])\s*[）)]/
+    );
+
+    if (!m) continue;
+
+    const d = new Date(p.year, p.parts.sm - 1, p.parts.sd);
+    if (WEEKDAYS[d.getDay()] === m[3]) score += 1;
+  }
+
+  return score;
+}
+
+
+function assignRowYears(rows, today) {
+  const parsed = rows.map((row) => ({
+    row,
+    parts: parsePeriodParts(row?.[0] || ''),
+    year: null,
+  }));
+
+  const idxs = parsed
+    .map((p, i) => (p.parts ? i : -1))
+    .filter((i) => i >= 0);
+
+  if (!idxs.length) return parsed;
+
+  // 最終行の年を候補から選ぶ。
+  // 「今日に近い年」だけで決めるとシートが数か月未更新のときにずれるため、
+  // まずB列の曜日と一致する数で採点し、同点なら今日に近い年を採る。
+  const last = parsed[idxs[idxs.length - 1]].parts;
+  const ty = today.getFullYear();
+  let best = null;
+
+  for (const y of [ty - 2, ty - 1, ty, ty + 1]) {
+    assignYearsFrom(parsed, idxs, y);
+
+    const score = scoreWeekdays(parsed, idxs);
+    const dist = Math.abs(new Date(y, last.sm - 1, last.sd) - today);
+
+    if (
+      !best ||
+      score > best.score ||
+      (score === best.score && dist < best.dist)
+    ) {
+      best = { y, score, dist };
+    }
+  }
+
+  assignYearsFrom(parsed, idxs, best.y);
+
+  return parsed;
 }
 
 // 最終行から上方向へ検索し、最初に一致した行を採用（仕様書 10-3）
+//
+// 年を推定したうえで突き合わせるため、シートが未更新で
+// 該当週の行がまだ無い場合は「該当なし」となり、手入力欄が出る。
+// 別の年の行に一致して古いリンクを貼ってしまうことを防ぐ。
 function findSheetRow() {
   const t = parseKintoneDatetime(state.record?.firstDelivery);
   if (!t || !state.sheetRows) return null;
-  const target = new Date(t.y, t.m - 1, t.d);
 
-  for (let i = state.sheetRows.length - 1; i >= 0; i--) {
-    const row = state.sheetRows[i];
-    const period = parsePeriod(row?.[0] || '', t.y, t.m);
-    if (!period) continue;
-    if (target >= period.start && target <= period.end) {
-      return { period, html: row?.[1] || '' };
+  const target = new Date(t.y, t.m - 1, t.d);
+  const parsed = assignRowYears(state.sheetRows, new Date());
+
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    const p = parsed[i];
+    if (!p.parts || p.year === null) continue;
+
+    const { sm, sd, em, ed } = p.parts;
+    const sy = p.year;
+    const ey = em < sm ? p.year + 1 : p.year;
+
+    const start = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+
+    if (target >= start && target <= end) {
+      return {
+        period: {
+          start,
+          end,
+          label: String(p.row?.[0] || '').trim(),
+        },
+        html: p.row?.[1] || '',
+      };
     }
   }
+
   return null;
 }
 
@@ -678,7 +803,10 @@ function renderTemplateTab() {
 
   const hit = findSheetRow();
   if (hit && hit.html) {
-    $('tpl-period').textContent = hit.period.label;
+    // シートB列には年が無いため、判定した年を併記して
+    // 別の年の行を拾っていないか目視で確認できるようにする
+    $('tpl-period').textContent =
+      `${hit.period.label.replace(/\s*\n\s*/g, ' ')}（${fmtYmd(hit.period.start)}〜${fmtYmd(hit.period.end)}）`;
     $('tpl-c-status').textContent = '成功';
     $('tpl-manual-wrap').hidden = true;
     $('tpl-output').value = buildTemplateHtml(hit.html);
