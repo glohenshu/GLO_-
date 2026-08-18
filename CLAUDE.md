@@ -58,6 +58,13 @@ GLOの新規連載登録時に必要な情報を、カテゴリコード（例�
 ## 作業ルール
 
 - 修正後は `node --check` で構文確認してからpush
-  - ※ 2026/08/18時点、この作業PCにNodeは未インストール（PATHにもProgram Filesにも無し）。ローカルで `node --check` は実行できないため、pushしてVercelのビルド結果とAPI直叩きで確認する
+
+  ```bash
+  node --check api/fetch-info.js && node --check app.js
+  ```
+
+  - Node v24.19.0 LTS を 2026/08/18 に導入済み（`%LOCALAPPDATA%\Programs\nodejs`）
+  - 管理者権限が無いため公式MSIではなく**公式ZIPをユーザー領域に展開**してある。ユーザーPATHに登録済み
+  - バージョンを上げるときは https://nodejs.org/dist/ からZIPを取得し、SHA256を `SHASUMS256.txt` と照合してから同じ場所に差し替える
 - 本番反映前にAPI直叩き（`?code=gr1966` 等）で確認できる
 - Vercel Deployment Protectionの変更はダッシュボードから手動（APIでは不可）
