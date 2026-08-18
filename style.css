@@ -12,7 +12,7 @@
   --panel-2: #F7F9F7;
   --ink: #1A1D19;
   --sub: #616B62;
-  --faint: #8D958D;
+  --faint: #666B66;   /* 白・パネル・地のいずれでもコントラスト比4.5以上 */
   --line: #DCE1DB;
   --line-soft: #E9EDE7;
   --accent: #1B6B52;          /* GLOツールの基調色：深緑 */
@@ -130,9 +130,18 @@ h1 .ver {
 
 .meta b {
   color: var(--ink);
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* 等幅は数字・IDの欄だけ。取得状況は日本語が入るので当てない
+   （--mono に日本語グリフが無く、字形と字幅がばらつくため） */
+#info-category,
+#info-prodno,
+#info-delivery {
   font-family: var(--mono);
   font-size: 12px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
@@ -191,7 +200,6 @@ summary:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-  border-radius: 3px;
 }
 
 /* ============================================================
@@ -344,11 +352,17 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   letter-spacing: .04em;
 }
 
-.field-list .field input[type="text"] {
+.field-list .field input[type="text"] { padding: 8px 11px; }
+
+/* 等幅は数字の欄だけ。著者・表示用著者名・判型は日本語が入りうるので当てない
+   （判型は「4-6」のこともあれば「文庫」のこともある） */
+#bf-isbn,
+#bf-pages,
+#bf-release,
+#bf-publish {
   font-family: var(--mono);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  padding: 8px 11px;
 }
 
 .field-list .field button.copy { width: 100%; padding: 8px 0; }
@@ -559,10 +573,15 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .template-status b {
   color: var(--ink);
-  font-family: var(--mono);
   font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* 期間と取得状況は日本語（「8月第四週」「該当期間が見つかりません」）が
+   入るため等幅にしない。日時だけ等幅にする */
+#tpl-delivery {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   letter-spacing: .02em;
 }
 
