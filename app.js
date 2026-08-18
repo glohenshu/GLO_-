@@ -296,8 +296,9 @@ function buildAuthorsFromPub() {
     if (lines.length) {
       const a = emptyAuthor();
 
+      // 経歴が無く名前1行だけのページもあるため、
+      // 行数ではなく「先頭行が名前らしいか」で判定する。
       if (
-        lines.length > 1 &&
         lines[0].length <= 40 &&
         !/^\d/.test(lines[0])
       ) {
