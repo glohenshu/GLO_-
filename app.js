@@ -240,8 +240,9 @@ function buildAuthorsFromPub() {
   const isKanaText = (text) => /^[ぁ-ゖァ-ヶー・･ 　]+$/.test(text.trim());
 
   // 著者名行の厳密判定
+  // 括弧は全角（）・半角() の両方を許可する（ページ側の表記ゆれ対応）
   const parseNameLine = (line) => {
-    const m = line.match(/^(.+?)（([^）]+)）\s*$/);
+    const m = line.match(/^(.+?)[（(]([^）)]+)[）)]\s*$/);
     if (!m) return null;
 
     const name = m[1].trim();
@@ -287,10 +288,25 @@ function buildAuthorsFromPub() {
   }
 
   // 著者名行が1件も見つからなかった場合の保険
+  //
+  // 「ふらり」「いつむ」のようにかな併記のないペンネームは
+  // 「名前（かな）」形式にならないため上の判定では検出できない。
+  // その場合は先頭行を著者名、以降を著者紹介として扱う。
   if (state.authors.length === 0) {
-    if (block.trim()) {
+    if (lines.length) {
       const a = emptyAuthor();
-      a.intro = block.trim();
+
+      if (
+        lines.length > 1 &&
+        lines[0].length <= 40 &&
+        !/^\d/.test(lines[0])
+      ) {
+        a.name = lines[0];
+        a.intro = lines.slice(1).join('\n').trim();
+      } else {
+        a.intro = lines.join('\n').trim();
+      }
+
       state.authors.push(a);
     } else {
       state.authors.push(emptyAuthor());

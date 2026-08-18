@@ -321,13 +321,45 @@ const STOP_MARKERS = [
 ];
 
 
-function cutAtStops(text) {
+// ============================================================
+// 著者セクションの見出し（ページ側の表記ゆれに対応）
+// ページによって「■著者紹介」ではなく「■著者略歴」等になっている
+// ============================================================
+
+const AUTHOR_HEADINGS = [
+  '■著者紹介',
+  '■著者略歴',
+  '■著者プロフィール',
+  '■プロフィール',
+];
+
+
+// 出版実績ページの項目ラベル。
+// 値が空欄のとき、次のラベル行を値として拾わないための判定に使う。
+const FIELD_LABELS_RE =
+  /^(ISBN|判型|出版年月日|発売日|定価|価格|内容紹介|著者紹介|著者略歴|著者プロフィール|プロフィール|著者|ジャンル|シリーズ|電子書籍のみ|新刊)$/;
+
+
+// keepSubHeadings=true の場合、本文中の
+// 「■5台のカメラ開発秘話」のような小見出しでは打ち切らず、
+// 著者セクションの見出しまでを本文として扱う。
+function cutAtStops(text, keepSubHeadings = false) {
   let cut = text.length;
 
-  const h = text.search(/\n■/);
+  if (keepSubHeadings) {
+    for (const h of AUTHOR_HEADINGS) {
+      const i = text.indexOf(h);
 
-  if (h !== -1) {
-    cut = Math.min(cut, h);
+      if (i !== -1) {
+        cut = Math.min(cut, i);
+      }
+    }
+  } else {
+    const h = text.search(/\n■/);
+
+    if (h !== -1) {
+      cut = Math.min(cut, h);
+    }
   }
 
   for (const m of STOP_MARKERS) {
@@ -344,7 +376,7 @@ function cutAtStops(text) {
 }
 
 
-function sectionAfter(text, marker) {
+function sectionAfter(text, marker, keepSubHeadings = false) {
   const i = text.indexOf(marker);
 
   if (i === -1) {
@@ -352,7 +384,8 @@ function sectionAfter(text, marker) {
   }
 
   return cutAtStops(
-    text.slice(i + marker.length)
+    text.slice(i + marker.length),
+    keepSubHeadings
   );
 }
 
@@ -392,29 +425,38 @@ function parsePublicationPage(html) {
   // ■著者紹介
   // ------------------------------------------------------------
 
-  const authorBlock =
-    sectionAfter(
-      text,
-      '■著者紹介'
-    );
+  let authorBlock = '';
+
+  for (const heading of AUTHOR_HEADINGS) {
+    authorBlock = sectionAfter(text, heading);
+
+    if (authorBlock) {
+      break;
+    }
+  }
 
 
   // ------------------------------------------------------------
   // ■内容紹介
   // 見出し表記ゆれに対応
+  //
+  // 内容紹介の中に「■5台のカメラ開発秘話」のような小見出しが
+  // 入るページがあるため、■では打ち切らず著者セクションまで拾う。
   // ------------------------------------------------------------
 
   let intro =
     sectionAfter(
       text,
-      '■内容紹介'
+      '■内容紹介',
+      true
     );
 
   if (!intro) {
     intro =
       sectionAfter(
         text,
-        '内容紹介'
+        '内容紹介',
+        true
       );
   }
 
@@ -435,12 +477,22 @@ function parsePublicationPage(html) {
   // 判型
   // ------------------------------------------------------------
 
-  const format =
+  // 出版実績ページは「ラベル行の次の行が値」という構造のため、
+  // [：:\s]* は改行をまたぐ必要がある（出版年月日はこれに依存している）。
+  //
+  // ただし判型が空欄のページ（電子書籍のみの作品など）では、
+  // 次のラベル行「出版年月日」自体を値として拾ってしまうため、
+  // 取得値が既知のラベルだった場合は空にする。
+  let format =
     (
       text.match(
         /判型[：:\s]*([^\n]+)/
       ) || []
     )[1]?.trim() || '';
+
+  if (FIELD_LABELS_RE.test(format)) {
+    format = '';
+  }
 
 
   // ------------------------------------------------------------
@@ -479,7 +531,11 @@ function parsePublicationPage(html) {
 
   const h1 = extractMainH1(html);
 
-  if (h1.afterHtml) {
+  // <h1> が空のページは出版実績ページとして扱わない。
+  // 削除済み商品のURLは HTTP 200 のまま <h1> が空の
+  // 404ページが返る（ソフト404）ことがあり、ここで打ち切らないと
+  // サイト共通の宣伝文をキャッチコピーとして取得してしまう。
+  if (h1.title && h1.afterHtml) {
     const afterH1Text = htmlToText(h1.afterHtml);
 
     const genreIdx =
@@ -570,9 +626,13 @@ function parsePublicationPage(html) {
   // ------------------------------------------------------------
   // 最終フォールバック：
   // og:description
+  //
+  // ただし <h1> の無いページ（削除済み商品のソフト404）では
+  // og:description がサイト共通の宣伝文になっているため、
+  // 出版実績ページと確認できた場合だけ使う。
   // ------------------------------------------------------------
 
-  if (!catchCopy) {
+  if (!catchCopy && h1.title) {
     const og =
       html.match(
         /property=["']og:description["'][^>]*content=["']([^"']+)["']/
