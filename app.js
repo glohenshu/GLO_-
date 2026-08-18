@@ -71,6 +71,8 @@ async function copyText(text) {
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('button.copy');
   if (!btn) return;
+  // MediaWeaverへ貼りに行って戻ったとき、どこまで進んだかが分かるように印を残す
+  btn.classList.add('copied');
   if (btn.dataset.copyText != null) return copyText(btn.dataset.copyText);
   if (btn.dataset.copyTarget) {
     const el = $(btn.dataset.copyTarget);
@@ -112,6 +114,11 @@ async function fetchInfo() {
     state.record = data.kintone.status === 'ok' ? data.kintone.data : null;
     state.pub = data.publication.status === 'ok' ? data.publication.data : null;
     state.sheetRows = data.sheet.status === 'ok' ? data.sheet.rows : null;
+
+    // 別の作品を取得したら、コピー済みの印は消す
+    document
+      .querySelectorAll('button.copy.copied')
+      .forEach((b) => b.classList.remove('copied'));
 
     if (data.kintone.status !== 'ok') {
       status.textContent = `kintone：${data.kintone.message}（手入力で作業できます）`;
@@ -200,8 +207,12 @@ function renderBasicInfo(data) {
   setBadge('info-pub-status', data.publication.status === 'ok', data.publication.message);
   setBadge('info-sheet-status', data.sheet.status === 'ok', data.sheet.message);
 
-  // 解析デバッグ：出版実績ページから抽出したテキストを表示
-  if (state.pub?.rawText) {
+  // 解析デバッグ：出版実績ページから抽出したテキスト。
+  // 通常の登録作業では使わないため、URLに ?debug=1 を付けたときだけ表示する。
+  // 取得内容がずれていて開発担当へ共有したいときは、その形で開く。
+  const debugOn = new URLSearchParams(location.search).get('debug') === '1';
+
+  if (debugOn && state.pub?.rawText) {
     $('debug-wrap').hidden = false;
     $('debug-text').value = state.pub.rawText;
   } else {
@@ -376,6 +387,11 @@ function authorCard(a, idx) {
   const q = (sel) => card.querySelector(sel);
   q('.a-name').value = a.name;
   q('.a-kana').value = a.kana;
+
+  // 空欄のまま登録してしまわないよう、取れなかったことを欄自体に出す。
+  // かなは出版実績ページに併記が無い著者（ペンネーム等）で頻繁に空になる
+  if (!a.name) q('.a-name').placeholder = 'ページから取得できませんでした';
+  if (!a.kana) q('.a-kana').placeholder = 'ページに併記がありません';
   q('.a-intro').value = a.intro;
 
   q('.a-name').addEventListener('input', (e) => { a.name = e.target.value; syncAuthorDependents(); });
@@ -534,7 +550,16 @@ function renderBookFields() {
     `;
     wrap.appendChild(row);
     $(inputId).value = def.calc() || '';
-    if (!$(inputId).value) $(inputId).placeholder = '取得できませんでした';
+
+    // 空欄の理由を分ける。
+    // 出版実績ページが取れているのに空なら、そのページに記載が無い
+    // （電子書籍のみの作品はISBN・判型・ページ数が常に空になる）。
+    // ページ自体が取れていないなら、取得の失敗。
+    if (!$(inputId).value) {
+      $(inputId).placeholder = state.pub
+        ? 'ページに記載がありません'
+        : '取得できませんでした';
+    }
   });
 }
 
