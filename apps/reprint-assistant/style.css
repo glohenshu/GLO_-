@@ -531,10 +531,21 @@ a:focus-visible {
 
 .line.final { color: var(--accent); font-weight: 600; }
 
+/* 参照元の回とIDは確認用。記事タイトルより目立たせない */
 .line.mono-id {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+
+/* 記事下の対象期間：2026/8/23〜2026/8/29 */
+.line.range {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .line.ellip {

@@ -889,7 +889,7 @@ function renderPrevTable() {
     titleInput.className = 'title-input';
     titleInput.autocomplete = 'off';
     titleInput.spellcheck = false;
-    titleInput.placeholder = '夫が半身不随になったあの日から…';
+    // 例文をプレースホルダーに置くと入力済みに見えるため、空欄のままにする
     titleInput.value = row.articleTitle;
     titleInput.dataset.index = String(index);
     titleInput.setAttribute('aria-label', `${row.label}の今回の記事タイトル`);
@@ -1359,34 +1359,21 @@ function createSheetCell(row, hit, bottomHtml) {
 
   if (!bottomHtml) {
     cell.appendChild(
-      createLine(`記事下：${hit.period.label}（C列が空です）`, 'warn')
+      createLine(`記事下：${fmtPeriodRange(hit.period)}（C列が空です）`, 'warn')
     );
     return cell;
   }
 
-  cell.appendChild(createLine(hit.period.label, 'ellip'));
-
-  // B列に年が無いため、判定した年を併記して
-  // 別の年の行を拾っていないか目視で確認できるようにする
-  cell.appendChild(
-    createLine(
-      `${fmtYmdShort(hit.period.start)}〜${fmtYmdShort(hit.period.end)}`,
-      'sub'
-    )
-  );
-
-  // 一覧リンクの誘導先は回によって変わるため、貼る前に確認できるようにする
-  const target = getListTarget(row.isFinal);
-
-  cell.appendChild(
-    createLine(
-      `一覧：/category/${target.categoryCode || '（コード不明）'}` +
-        `『${target.bookTitle || 'タイトル不明'}』`,
-      'sub'
-    )
-  );
+  // B列の「8月第四週 8/23（日）〜8/29（土）」はそのままでは読みにくいので、
+  // 判定した年を含む期間だけを出す
+  cell.appendChild(createLine(fmtPeriodRange(hit.period), 'range'));
 
   return cell;
+}
+
+// 期間の表示は 2026/8/23〜2026/8/29 の形に統一する
+function fmtPeriodRange(period) {
+  return `${fmtYmdShort(period.start)}〜${fmtYmdShort(period.end)}`;
 }
 
 // 揃っていないものを押せてしまうと誤ったHTMLが貼られるため、
