@@ -1,0 +1,443 @@
+/* ============================================================
+   再掲連載作成アシスタント ── style.css
+
+   既存「新連載作成アシスタント」と同じ深緑系の業務ツールUI。
+   タブは持たず、検索 → 今回の再掲情報 → 参照元 → 記事一覧を
+   上から一画面で辿れるようにする。
+   ============================================================ */
+
+:root {
+  --bg: #F1F3F1;
+  --panel: #FFFFFF;
+  --panel-2: #F7F9F7;
+  --ink: #1A1D19;
+  --sub: #616B62;
+  --faint: #666B66;
+  --line: #DCE1DB;
+  --line-soft: #E9EDE7;
+  --accent: #1B6B52;          /* GLOツールの基調色：深緑 */
+  --accent-ink: #14513E;
+  --accent-soft: #E6F0EB;
+  --warn: #A8481F;
+  --warn-soft: #FBEDE6;
+  --code-bg: #F4F6F3;
+  --radius: 7px;
+  --radius-sm: 5px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --shadow: 0 1px 2px rgba(20, 34, 27, .05);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.75;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   上部：検索
+   ============================================================ */
+
+/* 記事が20件並ぶので、検索行だけを固定して常に呼び出せるようにする */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 12px 20px 13px;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+h1 .ver {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin-left: 8px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.search-row label {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+
+#code-input {
+  width: 132px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: var(--mono);
+  letter-spacing: .1em;
+  background: var(--panel-2);
+  color: var(--ink);
+}
+
+#code-input:focus { border-color: var(--accent); background: var(--panel); }
+
+.fetch-status { font-size: 12px; color: var(--sub); }
+.fetch-status.error { color: var(--warn); }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ============================================================
+   本文
+   ============================================================ */
+
+.content {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 22px 20px 90px;
+}
+
+.block + .block { margin-top: 26px; }
+
+h2 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  margin-bottom: 5px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.hint {
+  font-size: 12.5px;
+  color: var(--sub);
+  margin-bottom: 12px;
+  line-height: 1.85;
+  max-width: 74ch;
+}
+
+.note { font-size: 11.5px; color: var(--faint); }
+
+/* ---- 警告 ---- */
+
+.warnings {
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 11px 16px 12px;
+  margin-bottom: 22px;
+  color: var(--warn);
+}
+
+.warnings-head {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+.warnings ul { margin: 4px 0 0; padding-left: 1.2em; }
+
+.warnings li { font-size: 12.5px; line-height: 1.7; }
+
+/* ---- 今回の再掲情報 ---- */
+
+.current-info {
+  margin-top: 8px;
+  padding: 10px 15px 11px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.book-title {
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .03em;
+}
+
+.meta {
+  display: flex;
+  gap: 1px 20px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--faint);
+  letter-spacing: .04em;
+  margin-top: 2px;
+}
+
+.meta b {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+/* 等幅はコード・数字の欄だけ。連載分類は日本語が入るので当てない */
+#current-code,
+#current-count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+/* ---- 参照元選択 ---- */
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+#source-select {
+  min-width: 380px;
+  max-width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#source-select:focus { border-color: var(--accent); }
+
+#source-select:disabled {
+  background: var(--code-bg);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.source-status {
+  font-size: 11.5px;
+  color: var(--faint);
+  letter-spacing: .04em;
+}
+
+.source-status.warn { color: var(--warn); font-weight: 600; }
+
+/* ============================================================
+   記事一覧
+   ============================================================ */
+
+.article-list {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.ep-card {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-top: none;
+  padding: 10px 14px 12px;
+}
+
+.ep-card:first-child { border-top: 1px solid var(--line-soft); }
+.ep-card:hover { background: var(--panel-2); }
+
+/* ---- 見出し行 ---- */
+
+.ep-head {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.ep-no {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--accent);
+}
+
+/* タイトルは長い。1行に丸めて、全文はtooltipで見せる */
+.ep-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-id {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* ---- 前回 / 続き ---- */
+
+.ep-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 22px;
+  padding-top: 8px;
+}
+
+.ep-block + .ep-block {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 22px;
+}
+
+.ep-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: var(--faint);
+  margin-bottom: 3px;
+}
+
+.ep-value {
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  letter-spacing: .02em;
+}
+
+.ep-value.muted { color: var(--faint); }
+.ep-value.warn { color: var(--warn); font-weight: 600; }
+
+.ep-value.final {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 参照先のタイトル確認用。ここも1行に丸める */
+.ep-subvalue {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ep-block button.copy { margin-top: 6px; }
+
+/* ---- ボタン ---- */
+
+button.primary, button.copy {
+  appearance: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  letter-spacing: .06em;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover { background: var(--accent-ink); }
+button.primary:disabled { opacity: .45; cursor: default; }
+
+button.copy {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--sub);
+  font-weight: 600;
+}
+
+button.copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+button.copy:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* 一度コピーした項目。20件を上から順に処理するので、どこまで進んだかを残す */
+button.copy.copied {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.copy.mini { padding: 3px 10px; font-size: 11px; }
+
+/* ============================================================
+   トースト
+   ============================================================ */
+
+.toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translate(-50%, 14px);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  letter-spacing: .06em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 50;
+}
+
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, .toast { transition: none !important; }
+}
+
+@media (max-width: 760px) {
+  .ep-head { grid-template-columns: 66px minmax(0, 1fr); }
+  .ep-id { grid-column: 2; }
+  .ep-body { grid-template-columns: 1fr; }
+
+  .ep-block + .ep-block {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line-soft);
+    padding-top: 10px;
+  }
+
+  #source-select { min-width: 0; width: 100%; }
+}

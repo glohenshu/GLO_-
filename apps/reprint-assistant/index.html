@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>再掲連載作成アシスタント</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <h1>再掲連載作成アシスタント <span class="ver">Ver.0.1</span></h1>
+
+    <div class="search-row">
+      <label for="code-input">カテゴリコード</label>
+      <input id="code-input" type="text" placeholder="gr1896" autocomplete="off" spellcheck="false">
+      <button id="fetch-btn" class="primary">情報取得</button>
+      <span id="fetch-status" class="fetch-status" role="status"></span>
+    </div>
+  </div>
+</header>
+
+<main class="content">
+
+  <!-- 警告 -->
+  <div id="warnings" class="warnings" hidden>
+    <p class="warnings-head">確認が必要な項目があります</p>
+    <ul id="warnings-list"></ul>
+  </div>
+
+  <!-- 今回の再掲情報 -->
+  <section id="section-current" class="block" hidden>
+    <h2>今回の再掲情報</h2>
+    <div class="current-info">
+      <p class="book-title" id="current-title"></p>
+      <p class="meta">
+        <span>カテゴリ：<b id="current-code"></b></span>
+        <span>全<b id="current-count"></b>回</span>
+        <span>連載分類：<b id="current-type"></b></span>
+      </p>
+    </div>
+  </section>
+
+  <!-- 参照元選択 -->
+  <section id="section-source" class="block" hidden>
+    <h2>「この話の続きを読む」の参照元</h2>
+    <p class="hint">元連載を選んでください。自動確定はしません。選び直すと記事一覧の「続きを読む」が再計算されます。</p>
+    <div class="source-row">
+      <select id="source-select"></select>
+      <span id="source-status" class="source-status"></span>
+    </div>
+  </section>
+
+  <!-- 記事一覧 -->
+  <section id="section-articles" class="block" hidden>
+    <div class="panel-head">
+      <h2>記事一覧</h2>
+      <span id="articles-count" class="note"></span>
+    </div>
+    <div id="article-list" class="article-list"></div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
