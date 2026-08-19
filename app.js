@@ -51,12 +51,12 @@ function fmtDelivery(v) {
   return t ? `${t.y}/${pad(t.m)}/${pad(t.d)} ${t.hh}:${t.mm}` : '';
 }
 
-// 作業日（今日）を、発売日と同じ「yyyy/mm/dd 05:00」の形で入れる。
+// 公開開始日（当日）を、発売日と同じ「yyyy/mm/dd 05:00」の形で入れる。
 // 開いたときと取得のたびに入れ直すので、日付をまたいでも当日の日付になる。
 // 手で直したい場合はそのまま書き換えられる。
-function renderWorkDate() {
+function renderPublishStart() {
   const d = new Date();
-  $('work-date').value = `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} 05:00`;
+  $('publish-start').value = `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} 05:00`;
 }
 
 function showToast(msg) {
@@ -173,7 +173,7 @@ async function fetchInfo() {
 }
 
 function renderAll(data) {
-  renderWorkDate();
+  renderPublishStart();
   renderBasicInfo(data);
   renderQuickLinks(data);
   buildAuthorsFromPub();
@@ -884,5 +884,5 @@ $('tpl-manual').addEventListener('input', () => {
   $('tpl-output').value = buildTemplateHtml($('tpl-manual').value);
 });
 
-// 取得前でも作業日はコピーできるようにしておく
-renderWorkDate();
+// 取得前でも公開開始日はコピーできるようにしておく
+renderPublishStart();
