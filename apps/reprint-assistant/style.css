@@ -141,12 +141,13 @@ a:focus-visible {
 }
 
 /* 長い説明を1段落に詰めると読みにくいので、
-   「何の話か」と「その内容」を左右に分けて並べる */
+   「何の話か」と「その内容」を左右に分けて並べる。
+   下の表と同じ幅まで使って、1項目が折り返さずに収まるようにする */
 .hint-defs {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 3px 14px;
-  max-width: 88ch;
+  gap: 3px 18px;
+  max-width: none;
   margin: 10px 0 12px;
   padding: 10px 14px;
   border: 1px solid var(--line-soft);
