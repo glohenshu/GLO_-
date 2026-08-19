@@ -540,12 +540,34 @@ a:focus-visible {
   line-height: 1.5;
 }
 
-/* 記事下の対象期間：2026/8/23〜2026/8/29 */
+/* 記事下の対象期間：2026/8/23〜2026/8/29
+   B列の原文と誘導先は title 属性（ホバー）で確認する */
 .line.range {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   white-space: nowrap;
+  cursor: help;
+}
+
+/* 参照元の記事をその場で開いて確認できるようにする */
+.line a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line);
+}
+
+.line a:hover {
+  color: var(--accent);
+  border-bottom-color: currentColor;
+}
+
+/* 記事タイトルに原稿由来の記号が残っているときの目印。
+   自動では直さないので、実記事を開いて確認してもらう */
+.line.risky {
+  color: var(--warn);
+  font-weight: 600;
+  cursor: help;
 }
 
 .line.ellip {

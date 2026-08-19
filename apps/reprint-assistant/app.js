@@ -1302,21 +1302,108 @@ function createNextCell(link) {
   }
 
   const source = link.source;
+  const label = source.episodeLabel || `第${link.nextNumber}回`;
+  const refText = `参照元 ${label}／ID ${source.articleId}`;
+  const href = resolveArticleHref(source);
 
+  // 記事タイトルは記事データアプリの登録内容をそのまま使うため、
+  // おかしければ実記事を開いて確かめられるようにリンクにしておく
   cell.appendChild(
-    createLine(
-      `参照元 ${
-        source.episodeLabel || `第${link.nextNumber}回`
-      }／ID ${source.articleId}`,
-      'mono-id'
-    )
+    href
+      ? createLinkLine(
+          refText,
+          href,
+          'mono-id',
+          `${href}\n参照元の記事を別タブで開いて確認できます`
+        )
+      : createLine(refText, 'mono-id')
   );
 
   cell.appendChild(
     createLine(source.articleTitle || '（記事タイトルなし）', 'sub ellip')
   );
 
+  // 原稿由来の記号がタイトルに残っていることがある。
+  // 自動で直すと元と変わってしまうので、直さずに目印だけ出す
+  const risky = findRiskyTitleParts(source.articleTitle);
+
+  if (risky.length) {
+    cell.appendChild(
+      createLine(
+        `要確認：${risky.map((item) => item.label).join('・')}`,
+        'sub risky',
+        risky
+          .map((item) => `${item.label}：${item.sample}`)
+          .join('\n') + '\n記事を開いて表示を確認してください'
+      )
+    );
+  }
+
   return cell;
+}
+
+// 記事URLが空のレコードがあるため、同じ参照元の他の記事から
+// 記事URLの形（https://…/articles/-/）を借りる。ドメインは決め打ちしない
+function getArticleUrlBase() {
+  const articles =
+    (state.selectedSource && state.selectedSource.articles) || [];
+
+  for (const article of articles) {
+    const match = String((article && article.articleUrl) || '').match(
+      /^(https?:\/\/[^/]+\/articles\/-\/)/i
+    );
+
+    if (match) return match[1];
+  }
+
+  return '';
+}
+
+function resolveArticleHref(article) {
+  const url = String((article && article.articleUrl) || '').trim();
+
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const articleId = String((article && article.articleId) || '').trim();
+
+  if (!articleId) return '';
+
+  const base = getArticleUrlBase();
+
+  return base ? base + encodeURIComponent(articleId) : '';
+}
+
+// 記事タイトルに混ざると表示崩れ・文字化けの原因になりうる記号。
+//
+// 半角の ! ? やダッシュはGLOのタイトルで普通に使われるため入れない。
+// 目印が多すぎると見なくなるので、疑わしいものだけに絞る。
+const RISKY_TITLE_RULES = [
+  { re: /[<>&"]/g, label: 'HTMLで意味を持つ記号' },
+  { re: /[｡-ﾟ]/g, label: '半角カナ' },
+  {
+    re: /[①-⑳⑴-⒇Ⅰ-Ⅻⅰ-ⅹ㈱㈲㈹℡№〓㌀-㍿]/g,
+    label: '機種依存の記号',
+  },
+  { re: /\uFFFD/g, label: '文字化けの疑い' },
+  { re: /[\u0000-\u001F\u007F]/g, label: '制御文字' },
+];
+
+function findRiskyTitleParts(title) {
+  const text = String(title || '');
+  const found = [];
+
+  for (const rule of RISKY_TITLE_RULES) {
+    const matched = text.match(rule.re);
+
+    if (!matched) continue;
+
+    found.push({
+      label: rule.label,
+      sample: [...new Set(matched)].join(' '),
+    });
+  }
+
+  return found;
 }
 
 // 記事下リンク（連載一覧＋イチオシ）の状態。
@@ -1365,8 +1452,21 @@ function createSheetCell(row, hit, bottomHtml) {
   }
 
   // B列の「8月第四週 8/23（日）〜8/29（土）」はそのままでは読みにくいので、
-  // 判定した年を含む期間だけを出す
-  cell.appendChild(createLine(fmtPeriodRange(hit.period), 'range'));
+  // 画面には判定した年を含む期間だけを出す。
+  //
+  // ただしB列に年が無いため、年の推定がずれると別の週のリンクを貼ってしまう。
+  // 拾った行と誘導先はホバーで確認できるようツールチップに残しておく
+  const target = getListTarget(row.isFinal);
+
+  const tooltip = [
+    `シートB列：${hit.period.label}`,
+    `一覧：/category/${target.categoryCode || '（コード不明）'}` +
+      `『${target.bookTitle || 'タイトル不明'}』`,
+  ].join('\n');
+
+  cell.appendChild(
+    createLine(fmtPeriodRange(hit.period), 'range', tooltip)
+  );
 
   return cell;
 }
@@ -1738,11 +1838,31 @@ function createPlannedCell(row) {
   return cell;
 }
 
-function createLine(text, className) {
+// tooltip を渡すと、画面には出さずホバーしたときだけ見える補足になる。
+// 表示を増やさずに確認手段だけ残したいときに使う
+function createLine(text, className, tooltip) {
   const line = document.createElement('div');
   line.className = 'line' + (className ? ` ${className}` : '');
   line.textContent = text;
-  line.title = text;
+  line.title = tooltip || text;
+  return line;
+}
+
+// 参照元の記事を別タブで開いて中身を確認するためのリンク行
+function createLinkLine(text, href, className, tooltip) {
+  const line = document.createElement('div');
+  line.className = 'line' + (className ? ` ${className}` : '');
+
+  const anchor = document.createElement('a');
+
+  anchor.href = href;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
+  anchor.textContent = text;
+  anchor.title = tooltip || href;
+
+  line.appendChild(anchor);
+
   return line;
 }
 
