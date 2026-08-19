@@ -14,7 +14,14 @@
 
     <div class="search-row">
       <label for="code-input">カテゴリコード</label>
-      <input id="code-input" type="text" placeholder="gr1896" autocomplete="off" spellcheck="false">
+
+      <!-- gr は固定。入力するのは数字だけにする -->
+      <span class="code-field">
+        <span class="code-prefix" aria-hidden="true">gr</span>
+        <input id="code-input" type="text" inputmode="numeric" placeholder="1896"
+               autocomplete="off" spellcheck="false" maxlength="8"
+               aria-label="カテゴリコードの数字（grは不要）">
+      </span>
       <button id="fetch-btn" class="primary">情報取得</button>
       <span id="fetch-status" class="fetch-status" role="status"></span>
     </div>

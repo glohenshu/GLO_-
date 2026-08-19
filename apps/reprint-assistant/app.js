@@ -123,6 +123,25 @@ el.fetchBtn.addEventListener('click', () => {
   fetchReprintData();
 });
 
+// 入力できるのは半角数字だけ。
+// 全角数字と、貼り付けで付いてくる gr は黙って直し、
+// それ以外の文字が混ざっていたときだけ理由を出す
+el.codeInput.addEventListener('input', () => {
+  const raw = el.codeInput.value;
+  const digits = toCategoryDigits(raw);
+
+  if (digits !== raw) {
+    el.codeInput.value = digits;
+
+    if (hasUnusableCodeChars(raw)) {
+      setStatus('カテゴリコードは半角数字で入力してください（grは不要）', true);
+      return;
+    }
+  }
+
+  if (el.fetchStatus.classList.contains('error')) setStatus('');
+});
+
 el.codeInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     fetchReprintData();
@@ -234,13 +253,14 @@ el.prevBody.addEventListener('input', (event) => {
   updatePrevRow(index + 1);
 });
 
-// URLに ?code= が付いていれば初期表示で取得しておく
+// URLに ?code= が付いていれば初期表示で取得しておく。
+// ?code=gr1974 でも ?code=1974 でも同じように受ける
 (function initFromQuery() {
   const params = new URLSearchParams(location.search);
-  const code = (params.get('code') || '').trim();
+  const digits = toCategoryDigits(params.get('code'));
 
-  if (code) {
-    el.codeInput.value = code;
+  if (digits) {
+    el.codeInput.value = digits;
     fetchReprintData();
   }
 })();
@@ -249,11 +269,34 @@ el.prevBody.addEventListener('input', (event) => {
 // API取得
 // ------------------------------------------------------------
 
+// 画面に出しているのは数字だけ。APIへ渡すときに gr を付け直す
+function getCategoryCode() {
+  const digits = toCategoryDigits(el.codeInput.value);
+
+  return digits ? `gr${digits}` : '';
+}
+
+// 全角数字は半角に直し、先頭の gr と数字以外を落とす
+function toCategoryDigits(value) {
+  return String(value || '')
+    .replace(/[０-９]/g, (char) =>
+      String.fromCharCode(char.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/^\s*[gG][rR]/, '')
+    .replace(/[^0-9]/g, '');
+}
+
+// 直しようがない文字（英字・記号）が混ざっていたか。
+// 全角数字と gr は自動で直すので、ここでは咎めない
+function hasUnusableCodeChars(value) {
+  return /[^0-9０-９\s]/.test(String(value || '').replace(/^\s*[gG][rR]/, ''));
+}
+
 async function fetchReprintData() {
-  const code = el.codeInput.value.trim();
+  const code = getCategoryCode();
 
   if (!code) {
-    setStatus('カテゴリコードを入力してください', true);
+    setStatus('カテゴリコードの数字を入力してください', true);
     el.codeInput.focus();
     return;
   }
