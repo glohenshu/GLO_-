@@ -802,6 +802,19 @@ check('普通のタイトルでは「要確認」を出さない', () => {
   return !textOf(nextCellOf(app)).includes('要確認') || '→ 誤検知している';
 });
 
+check('?? の連続を「文字化けの可能性」として拾う', () => {
+  // gr1528 の実データにある形。ダッシュだったと思われる箇所が ?? になっている
+  const app = setup({
+    articles: makeArticles(8, {
+      2: { articleTitle: 'その真意とは??大嫌いだった夫に私が恋をした理由。' },
+    }),
+  });
+
+  const text = textOf(nextCellOf(app));
+
+  return text.includes('?? の連続') || `→ ${text}`;
+});
+
 check('半角の ! ? や…では「要確認」を出さない（目印を増やしすぎない）', () => {
   const app = setup({
     articles: makeArticles(8, {
