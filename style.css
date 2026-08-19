@@ -1,30 +1,54 @@
 /* ============================================================
-   新連載作成アシスタント ── style.css
+   新連載作成アシスタント ── style.css（改訂）
 
    index.html / app.js は変更なし。このファイルの差し替えのみ。
-   セレクタは既存のものだけを使い、画面に文言・記号・状態表示を
-   足すことはしない（配色・余白・字組み・罫線・サイズのみ）。
+   画面に文言・記号・状態表示を足さない（配色・余白・字組み・罫線のみ）。
+
+   方針
+   1. 字の大きさを5段、余白を4pxの倍数に統一する
+      （改訂前は文字12種・余白19種が混在していた）
+   2. 書籍登録の一覧を「入力欄の列」ではなく「表」として読ませる
+   3. 地・紙・罫の3層をはっきり分け、影は1つだけにする
    ============================================================ */
 
 :root {
-  --bg: #F1F3F1;
-  --panel: #FFFFFF;
-  --panel-2: #F7F9F7;
-  --ink: #1A1D19;
-  --sub: #616B62;
-  --faint: #666B66;   /* 白・パネル・地のいずれでもコントラスト比4.5以上 */
-  --line: #DCE1DB;
-  --line-soft: #E9EDE7;
-  --accent: #1B6B52;          /* GLOツールの基調色：深緑 */
-  --accent-ink: #14513E;
-  --accent-soft: #E6F0EB;
-  --warn: #A8481F;
-  --warn-soft: #FBEDE6;
-  --code-bg: #F4F6F3;
-  --radius: 7px;
-  --radius-sm: 5px;
+  /* 字の大きさ ── この5段以外は使わない */
+  --t-xs: 11px;    /* 補助ラベル */
+  --t-s:  12px;    /* 説明・付随情報 */
+  --t-m:  13px;    /* 標準の本文・入力値 */
+  --t-l:  15px;    /* 見出し・書名 */
+  --t-xl: 18px;    /* 取得した書名 */
+
+  /* 余白 ── 4pxの倍数のみ */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  /* 色 ── 地・紙・罫の3層 */
+  --bg: #EBEEE9;                      /* 机 */
+  --panel: #FFFFFF;                   /* 紙 */
+  --panel-2: #F5F8F4;                 /* 紙の凹み */
+  --ink: #141712;
+  --sub: #565E56;
+  --faint: #666C66;                  /* 白・紙の凹み・机のいずれでも4.5以上 */
+  --line: rgba(22, 42, 28, .14);
+  --line-soft: rgba(22, 42, 28, .07);
+  --accent: #14684E;                  /* GLOツールの基調色：深緑 */
+  --accent-ink: #0E4E3A;
+  --accent-soft: #E3EFE9;
+  --warn: #A24418;
+  --warn-soft: #FBEDE5;
+  --code-bg: #F3F6F1;
+
+  --radius: 10px;
+  --radius-sm: 6px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --shadow: 0 1px 2px rgba(20, 34, 27, .05);
+
+  /* 影は1種類だけ。浮かせるのは著者カードのみ */
+  --shadow: 0 1px 1px rgba(22, 42, 28, .04), 0 8px 20px -12px rgba(22, 42, 28, .28);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,17 +57,15 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", Meiryo, system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: var(--t-m);
+  line-height: 1.8;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ============================================================
-   上部固定エリア
+   上部
    ============================================================ */
 
-/* 上部を丸ごと固定すると画面の4割を占めるため、固定するのはタブだけにする。
-   基本情報と検索行はスクロールで送れる。 */
 .topbar {
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -52,103 +74,103 @@ body {
 .topbar-inner {
   max-width: 920px;
   margin: 0 auto;
-  padding: 12px 20px 0;
+  padding: var(--s3) var(--s5) 0;
 }
 
 h1 {
-  font-size: 15px;
+  font-size: var(--t-s);
   font-weight: 700;
-  letter-spacing: .1em;
+  letter-spacing: .18em;
+  color: var(--sub);
 }
 
 h1 .ver {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--t-xs);
   font-weight: 400;
-  letter-spacing: .12em;
+  letter-spacing: .1em;
   color: var(--faint);
-  margin-left: 8px;
+  margin-left: var(--s2);
 }
 
 .search-row {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-top: 10px;
+  gap: var(--s2);
+  margin-top: var(--s3);
   flex-wrap: wrap;
 }
 
 .search-row label {
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--t-xs);
   letter-spacing: .12em;
 }
 
 #code-input {
-  width: 132px;
-  padding: 7px 12px;
+  width: 136px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: 14px;
+  font-size: var(--t-l);
   font-family: var(--mono);
-  letter-spacing: .1em;
+  letter-spacing: .12em;
   background: var(--panel-2);
   color: var(--ink);
 }
 
 #code-input:focus { border-color: var(--accent); background: var(--panel); }
 
-.fetch-status { font-size: 12px; color: var(--sub); }
+.fetch-status { font-size: var(--t-s); color: var(--sub); }
 .fetch-status.error { color: var(--warn); }
 
 /* ---- 基本情報 ---- */
-/* 書名と付随情報を横に流して、縦の専有を抑える */
+/* 取得後にいちばん見たいのは書名。書名を大きく、付随情報は右へ流す */
 .basic-info {
-  margin-top: 9px;
-  padding: 8px 13px;
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
   background: var(--panel-2);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: 18px;
-  row-gap: 1px;
+  column-gap: var(--s5);
+  row-gap: var(--s1);
 }
 
 .book-title {
-  font-size: 15.5px;
+  font-size: var(--t-xl);
   font-weight: 600;
-  line-height: 1.5;
-  letter-spacing: .03em;
+  line-height: 1.45;
+  letter-spacing: .02em;
 }
 
 .meta {
   display: flex;
-  gap: 1px 18px;
+  gap: 0 var(--s4);
   flex-wrap: wrap;
-  font-size: 11.5px;
-  line-height: 1.6;
+  font-size: var(--t-xs);
+  line-height: 1.7;
   color: var(--faint);
   letter-spacing: .04em;
 }
 
 .meta b {
-  color: var(--ink);
+  color: var(--sub);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--t-s);
 }
 
-/* 等幅は数字・IDの欄だけ。取得状況は日本語が入るので当てない
-   （--mono に日本語グリフが無く、字形と字幅がばらつくため） */
+/* 等幅は数字・IDだけ。取得状況は日本語が入るので当てない */
 #info-category,
 #info-prodno,
 #info-delivery {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--t-s);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .02em;
+  letter-spacing: 0;
 }
 
 .meta .ok { color: var(--accent); }
@@ -157,21 +179,21 @@ h1 .ver {
 .temp-title code {
   background: var(--code-bg);
   font-family: var(--mono);
-  font-size: 11.5px;
-  padding: 1px 7px;
-  border-radius: 4px;
+  font-size: var(--t-xs);
+  padding: 1px var(--s2);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line-soft);
 }
 
 /* ---- タブ ---- */
-/* 上部のうち、スクロールしても残すのはここだけ */
+/* スクロールしても残すのはここだけ */
 .tabs {
   position: sticky;
   top: 0;
   z-index: 10;
   display: flex;
   gap: 0;
-  margin-top: 9px;
+  margin-top: var(--s3);
   overflow-x: auto;
   scrollbar-width: none;
   background: var(--panel);
@@ -184,21 +206,21 @@ h1 .ver {
   appearance: none;
   border: none;
   background: none;
-  padding: 9px 15px 10px;
-  font-size: 13px;
+  padding: var(--s3) var(--s4);
+  font-size: var(--t-m);
   font-family: inherit;
   color: var(--faint);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   letter-spacing: .04em;
-  transition: color .15s ease;
+  transition: color .15s ease, border-color .15s ease;
 }
 
-.tabs button:hover { color: var(--sub); }
+.tabs button:hover { color: var(--ink); }
 
 .tabs button.active {
-  color: var(--ink);
+  color: var(--accent);
   font-weight: 700;
   border-bottom-color: var(--accent);
 }
@@ -210,7 +232,7 @@ textarea:focus-visible,
 summary:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* ============================================================
@@ -220,17 +242,17 @@ a:focus-visible {
 .content {
   max-width: 920px;
   margin: 0 auto;
-  padding: 26px 20px 90px;
+  padding: var(--s6) var(--s5) calc(var(--s6) * 3);
 }
 
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 h2 {
-  font-size: 17px;
+  font-size: var(--t-l);
   font-weight: 700;
-  letter-spacing: .06em;
-  margin-bottom: 5px;
+  letter-spacing: .08em;
+  margin-bottom: var(--s1);
 }
 
 .panel-head {
@@ -239,39 +261,58 @@ h2 {
   align-items: center;
 }
 
+/* 見出しと中身のあいだを空けて、塊として読ませる。
+   幅を絞ると途中で折り返してしまうので、絞らずに1行で流す。
+   実測でいちばん長い説明が705px、本文の幅が872pxなので、
+   ウィンドウ幅753px以上なら4タブとも1行に収まる。 */
 .hint {
-  font-size: 12.5px;
-  color: var(--sub);
-  margin-bottom: 16px;
-  line-height: 1.85;
-  max-width: 74ch;
+  font-size: var(--t-s);
+  color: var(--faint);
+  margin-bottom: var(--s5);
+  line-height: 1.9;
 }
 
-.note { font-size: 11.5px; color: var(--faint); }
+.note { font-size: var(--t-xs); color: var(--faint); }
+
+/* 狭いウィンドウでやむを得ず折り返すときの位置。
+   既定では「編集してくださ／い。」「手入力して／ください」のように
+   語の途中で折れる。文節で折り、行頭に小書き仮名や句読点が来ないようにする。
+   auto-phrase 未対応のブラウザでは、これまでどおりの折り返しになる。 */
+.hint,
+.note,
+.book-title,
+.template-status,
+h2 {
+  word-break: auto-phrase;
+  line-break: strict;
+}
 
 /* ---- 入力欄 ---- */
 textarea, input[type="text"] {
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  font-size: 13.5px;
+  font-size: var(--t-m);
   font-family: inherit;
   background: var(--panel);
   color: var(--ink);
-  line-height: 1.8;
+  line-height: 1.85;
+  transition: border-color .15s ease, background .15s ease;
 }
 
-textarea { resize: vertical; }
+textarea { resize: vertical; padding: var(--s3); }
 
 textarea:focus, input[type="text"]:focus { border-color: var(--accent); }
 
+/* 生成された結果。囲まず、地を沈めて「読むもの」として見せる */
 textarea[readonly] {
   background: var(--code-bg);
-  border-color: var(--line-soft);
+  border-color: transparent;
   font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.75;
+  font-size: var(--t-s);
+  line-height: 1.8;
+  color: var(--sub);
 }
 
 input[type="text"]::placeholder,
@@ -280,8 +321,7 @@ textarea::placeholder {
   opacity: 1;
 }
 
-/* 値が取れず手入力が要る欄は、空のあいだだけ橙で立たせる。
-   app.js が placeholder に取得できなかった理由を入れる欄に限定する。
+/* 値が取れず手入力が要る欄だけ、空のあいだ橙で立たせる。
    SNSのURL・その他リンク・コンテスト名は空でも異常ではないので対象外。 */
 #book-fields input[type="text"]:placeholder-shown,
 #book-fields textarea:placeholder-shown,
@@ -298,29 +338,30 @@ textarea::placeholder {
 .author-card .a-kana::placeholder,
 #catch-copy::placeholder {
   color: var(--warn);
-  font-size: 12.5px;
+  font-size: var(--t-s);
 }
 
 .block-label {
   display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: .04em;
-  margin: 18px 0 6px;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin: var(--s5) 0 var(--s2);
 }
 
-.btn-row { margin-top: 11px; display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row { margin-top: var(--s3); display: flex; gap: var(--s2); flex-wrap: wrap; }
 
 /* ---- ボタン ---- */
 button.primary, button.copy, button.ghost {
   appearance: none;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  font-size: 12.5px;
+  font-size: var(--t-s);
   font-family: inherit;
-  padding: 8px 16px;
+  padding: var(--s2) var(--s4);
   border: 1px solid transparent;
-  letter-spacing: .06em;
+  letter-spacing: .08em;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
 
@@ -331,7 +372,7 @@ button.primary {
 }
 
 button.primary:hover { background: var(--accent-ink); }
-button.primary:disabled { opacity: .45; cursor: default; }
+button.primary:disabled { opacity: .4; cursor: default; }
 
 button.copy {
   background: transparent;
@@ -348,64 +389,95 @@ button.copy:hover {
 
 button.copy:active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-/* 一度コピーした項目。MediaWeaverから戻ったとき、どこまで進んだかを残す。
-   （app.js がクリック時に .copied を付ける／再取得時に外す） */
+/* 一度コピーした項目。MediaWeaverから戻ったとき進み具合が分かる */
 button.copy.copied {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
 }
 
-button.copy.mini { padding: 3px 10px; font-size: 11px; }
+button.copy.mini { padding: var(--s1) var(--s3); font-size: var(--t-xs); }
 
 button.ghost {
   background: none;
   border-color: var(--line);
-  color: var(--sub);
+  color: var(--faint);
 }
 
 button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 /* ============================================================
-   ② 書籍登録：項目一覧
+   ② 書籍登録 ── 入力欄の列ではなく、表として読ませる
    ============================================================ */
 
-.field-list { border-top: 1px solid var(--line); }
+.field-list {
+  border-top: 1px solid var(--line);
+  margin-top: var(--s2);
+}
 
 .field-list .field {
   display: grid;
-  grid-template-columns: 132px 1fr 84px;
-  gap: 14px;
+  grid-template-columns: 116px 1fr 72px;
+  gap: var(--s4);
   align-items: start;
-  padding: 9px 10px 9px 2px;
+  padding: var(--s1) var(--s2) var(--s1) 0;
   border-bottom: 1px solid var(--line-soft);
-  margin-left: -2px;
 }
 
 .field-list .field:hover { background: var(--panel-2); }
 
 .field-list .field .fname {
-  font-size: 12.5px;
+  font-size: var(--t-s);
   font-weight: 600;
-  color: var(--sub);
-  padding-top: 10px;
-  letter-spacing: .04em;
+  color: var(--faint);
+  padding-top: 11px;   /* 入力欄の文字と行を揃えるための微調整 */
+  letter-spacing: .06em;
 }
 
-.field-list .field input[type="text"] { padding: 8px 11px; }
+/* 値は既定で枠を出さない。8つの枠が並ぶと帳票ではなく入力画面に見える。
+   触れたとき・書くときだけ枠が出る */
+.field-list .field input[type="text"] {
+  border-color: transparent;
+  background: transparent;
+  padding: var(--s2) var(--s3);
+}
 
-/* 等幅は数字の欄だけ。著者・表示用著者名・判型は日本語が入りうるので当てない
-   （判型は「4-6」のこともあれば「文庫」のこともある） */
+.field-list .field:hover input[type="text"] {
+  border-color: var(--line-soft);
+  background: var(--panel);
+}
+
+.field-list .field input[type="text"]:focus {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+
+/* 空欄の警告は、触れていなくても出したままにする */
+.field-list .field input[type="text"]:placeholder-shown,
+.field-list .field:hover input[type="text"]:placeholder-shown {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+}
+
+/* 等幅は数字の欄だけ。判型は「4-6」のことも「文庫」のこともある */
 #bf-isbn,
 #bf-pages,
 #bf-release,
 #bf-publish {
   font-family: var(--mono);
-  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
-.field-list .field button.copy { width: 100%; padding: 8px 0; }
+/* コピーは8つ並ぶので、既定は静かに。行に触れると立ち上がる */
+.field-list .field button.copy {
+  width: 100%;
+  padding: var(--s2) 0;
+  border-color: var(--line-soft);
+  color: var(--faint);
+  margin-top: 1px;   /* 入力欄の枠線1px分を吸収する微調整 */
+}
+
+.field-list .field:hover button.copy { border-color: var(--line); color: var(--sub); }
 
 /* ============================================================
    ① 著者カード
@@ -413,10 +485,10 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .author-card {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  padding: 18px 20px 20px;
-  margin-bottom: 18px;
+  padding: var(--s5);
+  margin-bottom: var(--s4);
   box-shadow: var(--shadow);
 }
 
@@ -424,15 +496,15 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 11px;
-  margin-bottom: 14px;
+  padding-bottom: var(--s3);
+  margin-bottom: var(--s4);
   border-bottom: 1px solid var(--line-soft);
 }
 
 .author-card .card-head h3 {
-  font-size: 12px;
+  font-size: var(--t-xs);
   font-weight: 700;
-  letter-spacing: .14em;
+  letter-spacing: .18em;
   color: var(--accent);
 }
 
@@ -440,7 +512,7 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   background: none;
   border: none;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   cursor: pointer;
   text-decoration: underline;
   font-family: inherit;
@@ -448,57 +520,60 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .author-card .remove:hover { color: var(--warn); }
 
+/* カード内の最初のラベルは上の余白を詰める */
+.author-card .block-label:first-of-type { margin-top: var(--s5); }
+
 .author-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: var(--s4);
 }
 
 .author-grid label, .link-row label, .contest-fields label {
   display: block;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--sub);
-  letter-spacing: .06em;
+  font-size: var(--t-xs);
+  font-weight: 700;
+  color: var(--faint);
+  letter-spacing: .1em;
 }
 
-.author-grid input, .link-row input, .contest-fields input { margin-top: 5px; }
+.author-grid input, .link-row input, .contest-fields input { margin-top: var(--s1); }
 
-.sns-block { margin-top: 18px; }
+.sns-block { margin-top: var(--s5); }
 
 .sns-rows { border-top: 1px solid var(--line-soft); }
 
 .sns-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 7px 2px;
+  gap: var(--s3);
+  padding: var(--s2) 0;
   border-bottom: 1px solid var(--line-soft);
   flex-wrap: wrap;
 }
 
 .sns-row .sns-name {
-  width: 124px;
-  font-size: 12.5px;
+  width: 116px;
+  font-size: var(--t-s);
   font-weight: 600;
-  color: var(--ink);
-  letter-spacing: .03em;
+  color: var(--sub);
+  letter-spacing: .04em;
 }
 
 .sns-row input[type="text"] { flex: 1; min-width: 220px; }
 
-/* ON/OFF は操作するものなので、淡くせず輪郭を持たせる */
+/* ON/OFF は操作するものなので輪郭を持たせる */
 .switch {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 10.5px;
+  gap: var(--s2);
+  font-size: var(--t-xs);
   font-weight: 700;
   letter-spacing: .14em;
   color: var(--faint);
   cursor: pointer;
   user-select: none;
-  padding: 3px 11px 3px 9px;
+  padding: var(--s1) var(--s3);
   border: 1px solid var(--line);
   border-radius: 999px;
   transition: color .15s ease, border-color .15s ease, background .15s ease;
@@ -520,14 +595,14 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   accent-color: var(--accent);
 }
 
-.switch:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.switch:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .link-row {
   display: grid;
   grid-template-columns: 1fr 2fr auto;
-  gap: 11px;
+  gap: var(--s3);
   align-items: end;
-  margin-top: 9px;
+  margin-top: var(--s3);
 }
 
 .link-row .remove-link {
@@ -535,24 +610,24 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   color: var(--faint);
-  padding: 8px 11px;
+  padding: var(--s2) var(--s3);
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   font-family: inherit;
 }
 
 .link-row .remove-link:hover { border-color: var(--warn); color: var(--warn); }
 
-.output-block { margin-top: 18px; }
+.output-block { margin-top: var(--s5); }
 
 /* ============================================================
    ④ サマリー
    ============================================================ */
 
 .char-count {
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   color: var(--faint);
-  margin-top: 6px;
+  margin-top: var(--s2);
   font-variant-numeric: tabular-nums;
   letter-spacing: .04em;
 }
@@ -560,30 +635,30 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 .char-count b {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--t-s);
   font-weight: 600;
 }
 
 .source-type {
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  padding: 13px 16px 14px;
-  margin-top: 18px;
+  padding: var(--s4) var(--s4) var(--s3);
+  margin-top: var(--s5);
   background: var(--panel);
 }
 
 .source-type legend {
-  font-size: 11px;
+  font-size: var(--t-xs);
   font-weight: 700;
-  letter-spacing: .12em;
+  letter-spacing: .14em;
   color: var(--faint);
-  padding: 0 7px;
+  padding: 0 var(--s2);
 }
 
 .source-type label {
   display: block;
-  font-size: 13px;
-  padding: 3px 0;
+  font-size: var(--t-m);
+  padding: var(--s1) 0;
   cursor: pointer;
   color: var(--sub);
 }
@@ -591,8 +666,8 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 .contest-fields {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 13px;
-  margin-top: 13px;
+  gap: var(--s4);
+  margin-top: var(--s4);
 }
 
 /* ============================================================
@@ -603,26 +678,23 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   background: var(--panel-2);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  padding: 12px 16px;
-  font-size: 12.5px;
-  margin-bottom: 16px;
+  padding: var(--s3) var(--s4);
+  font-size: var(--t-s);
+  margin-bottom: var(--s5);
   display: grid;
-  gap: 2px;
-  color: var(--sub);
+  gap: var(--s1);
+  color: var(--faint);
 }
 
 .template-status b {
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: var(--t-s);
   font-weight: 600;
 }
 
-/* 期間と取得状況は日本語（「8月第四週」「該当期間が見つかりません」）が
-   入るため等幅にしない。日時だけ等幅にする */
 #tpl-delivery {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: .02em;
 }
 
 /* ============================================================
@@ -631,15 +703,15 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .toast {
   position: fixed;
-  bottom: 26px;
+  bottom: var(--s5);
   left: 50%;
-  transform: translate(-50%, 14px);
+  transform: translate(-50%, var(--s3));
   background: var(--ink);
   color: var(--bg);
-  padding: 9px 20px;
-  border-radius: var(--radius);
-  font-size: 12.5px;
-  letter-spacing: .06em;
+  padding: var(--s2) var(--s5);
+  border-radius: var(--radius-sm);
+  font-size: var(--t-s);
+  letter-spacing: .08em;
   opacity: 0;
   pointer-events: none;
   transition: opacity .18s ease, transform .18s ease;
@@ -653,10 +725,12 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 }
 
 @media (max-width: 660px) {
+  .topbar-inner, .content { padding-left: var(--s4); padding-right: var(--s4); }
   .author-grid, .contest-fields { grid-template-columns: 1fr; }
-  .field-list .field { grid-template-columns: 1fr; gap: 6px; }
+  .field-list .field { grid-template-columns: 1fr; gap: var(--s1); padding: var(--s2) 0; }
   .field-list .field .fname { padding-top: 0; }
-  .field-list .field button.copy { width: auto; padding: 8px 16px; }
+  .field-list .field input[type="text"] { border-color: var(--line-soft); background: var(--panel); }
+  .field-list .field button.copy { width: auto; padding: var(--s2) var(--s4); }
   .link-row { grid-template-columns: 1fr; }
 }
 
@@ -665,20 +739,20 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
    ============================================================ */
 
 .quick-links {
-  margin-top: 9px;
-  margin-bottom: 2px;
+  margin-top: var(--s3);
+  margin-bottom: 0;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   background: var(--panel-2);
 }
 
 .quick-links summary {
-  padding: 7px 12px;
-  font-size: 11.5px;
-  line-height: 1.5;
+  padding: var(--s2) var(--s3);
+  font-size: var(--t-xs);
+  line-height: 1.6;
   font-weight: 700;
-  letter-spacing: .1em;
-  color: var(--sub);
+  letter-spacing: .14em;
+  color: var(--faint);
   cursor: pointer;
   user-select: none;
 }
@@ -686,43 +760,43 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 .quick-links summary:hover { color: var(--ink); }
 
 .quick-links-content {
-  padding: 4px 12px 10px;
+  padding: var(--s1) var(--s3) var(--s3);
   border-top: 1px solid var(--line-soft);
 }
 
-.quick-links-group { padding-top: 9px; }
+.quick-links-group { padding-top: var(--s3); }
 
 .quick-links-group + .quick-links-group {
-  margin-top: 9px;
+  margin-top: var(--s3);
   border-top: 1px solid var(--line-soft);
 }
 
 .quick-links-label {
-  margin-bottom: 6px;
-  font-size: 10px;
+  margin-bottom: var(--s2);
+  font-size: var(--t-xs);
   font-weight: 700;
-  letter-spacing: .14em;
+  letter-spacing: .16em;
   color: var(--faint);
 }
 
 .quick-links-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--s2);
 }
 
 .quick-link {
   display: inline-flex;
   align-items: center;
-  padding: 4px 11px;
+  padding: var(--s1) var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--panel);
   color: var(--accent);
-  font-size: 11.5px;
+  font-size: var(--t-xs);
   font-weight: 600;
   text-decoration: none;
-  letter-spacing: .04em;
+  letter-spacing: .06em;
   transition: background .15s ease, border-color .15s ease;
 }
 
@@ -736,5 +810,5 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
   background: transparent;
   border-color: var(--line-soft);
   cursor: not-allowed;
-  opacity: .55;
+  opacity: .5;
 }
