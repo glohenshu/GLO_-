@@ -682,13 +682,12 @@ check('最後の行は参照元に次回が残っていても最終回扱い', (
   );
 });
 
-check('最終回メッセージが公開済み記事と同じ書式', () => {
+check('最終回メッセージが指定どおりの1文', () => {
   const app = setup();
 
-  // gr1896・gr1528 の公開記事に入っている形
   const expected =
     '<p align="center">' +
-    '<span style="font-size:16px;">試し読み連載は今回で最終回です。</span>' +
+    '試し読み連載は今回で最終回です。ご愛読ありがとうございました。' +
     '</p>';
 
   return app.buildFinalEpisodeHtml() === expected || `→ ${app.buildFinalEpisodeHtml()}`;
@@ -1264,6 +1263,60 @@ check('記事下をコピーするとボタンが「コピー済み ✓」にな
     (button.textContent === app.COPIED_LABEL &&
       button.className.includes('copied')) ||
     `→ ${button.textContent}`
+  );
+});
+
+check('記事下のコピー済み表示は最後の1件だけ', async () => {
+  const app = setup();
+
+  const buttonOf = (index) =>
+    findNodes(
+      app.el.bottomBody.children[index],
+      (n) => n.className.includes('col-act')
+    )[0].children[0];
+
+  const first = buttonOf(0);
+  const second = buttonOf(1);
+
+  first.dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const firstCopied = first.textContent === app.COPIED_LABEL;
+
+  second.dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  return (
+    (firstCopied &&
+      second.textContent === app.COPIED_LABEL &&
+      first.textContent === '記事下まとめてコピー' &&
+      !first.className.includes('copied')) ||
+    `→ 1件目:${first.textContent} / 2件目:${second.textContent}`
+  );
+});
+
+check('テンプレのボタンも元のラベルに戻る', async () => {
+  const app = setup({ episodeCount: 9 });
+
+  const buttonOf = (index) =>
+    findNodes(
+      app.el.bottomBody.children[index],
+      (n) => n.className.includes('col-act')
+    )[0].children[0];
+
+  const template = buttonOf(7);
+  const normal = buttonOf(0);
+
+  template.dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  normal.dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  return (
+    (template.textContent === '記事下テンプレをコピー' &&
+      normal.textContent === app.COPIED_LABEL) ||
+    `→ テンプレ:${template.textContent} / 通常:${normal.textContent}`
   );
 });
 

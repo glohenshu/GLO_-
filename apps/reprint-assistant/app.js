@@ -57,6 +57,9 @@ const state = {
   // { number, label, isFinal, planned, articleId, articleTitle, copiedHtml, el }
   rows: [],
 
+  // 記事下タブのコピーボタン。コピー済み表示を1件だけにするために持つ
+  copyButtons: [],
+
   // スプレッドシート「毎月の記事下リンク」。rows は [B列, C列] の配列
   sheetRows: null,
   sheetStatus: 'error',
@@ -359,6 +362,7 @@ function resetView() {
   state.titleStash.clear();
   state.copiedStash.clear();
   state.rows = [];
+  state.copyButtons = [];
 
   renderCountControl();
 
@@ -1184,6 +1188,7 @@ function setBulkStatus(message, isWarn = false) {
 
 function renderBottomTable() {
   el.bottomBody.textContent = '';
+  state.copyButtons = [];
 
   if (!state.rows.length) {
     el.bottomBody.appendChild(
@@ -1574,13 +1579,17 @@ function buildNextArticleTemplateHtml() {
 
 // 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く。
 //
-// 文言と書式は公開済みの再掲（gr1896・gr1528）に合わせている。
+// 公開済みの再掲（gr1896・gr1528）は
+//   <p align="center"><span style="font-size:16px;">試し読み連載は今回で最終回です。</span></p>
+// だったが、「ご愛読ありがとうございました。」を含めた1文にする指示があったため
+// 2026-08-19にこの形へ変更した。span でのサイズ指定も付けない。
+//
 // 直後の余白 <p>　</p> はスプレッドシートC列の先頭に入っているため、
 // ここでは出さない（出すと余白が二重になる）
 function buildFinalEpisodeHtml() {
   return (
     '<p align="center">' +
-    '<span style="font-size:16px;">試し読み連載は今回で最終回です。</span>' +
+    '試し読み連載は今回で最終回です。ご愛読ありがとうございました。' +
     '</p>'
   );
 }
@@ -1957,6 +1966,9 @@ function createCopyButton(label, getText, toastMessage, modifier) {
   button.className = 'copy mini' + (modifier ? ` ${modifier}` : '');
   button.textContent = label;
 
+  // コピー済み表示を戻すときに使う。ボタンごとに文言が違うため持たせる
+  button.dataset.label = label;
+
   button.addEventListener('click', () => {
     if (button.disabled) return;
 
@@ -1969,8 +1981,7 @@ function createCopyButton(label, getText, toastMessage, modifier) {
 
     copyText(text).then((ok) => {
       if (ok) {
-        button.classList.add('copied');
-        button.textContent = COPIED_LABEL;
+        markCopiedButton(button);
         showToast(toastMessage);
       } else {
         showToast('コピーできませんでした');
@@ -1978,7 +1989,23 @@ function createCopyButton(label, getText, toastMessage, modifier) {
     });
   });
 
+  state.copyButtons.push(button);
+
   return button;
+}
+
+// コピー済みの表示は最後にコピーした1件だけにする。
+// 「作業が済んだ回」ではなく「いまクリップボードに入っているもの」を示す
+function markCopiedButton(button) {
+  for (const other of state.copyButtons) {
+    if (other === button) continue;
+
+    other.classList.remove('copied');
+    other.textContent = other.dataset.label || '';
+  }
+
+  button.classList.add('copied');
+  button.textContent = COPIED_LABEL;
 }
 
 function createDisabledButton(label, reason) {
