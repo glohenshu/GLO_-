@@ -34,55 +34,64 @@
        これから作る再掲連載の基本情報と、参照元にする過去連載
        ============================================================ -->
   <section id="section-common" class="block" hidden>
+    <!-- 3つの帯に分ける。
+         いま何を作っているか（基本情報）／ここで操作する（参照元・回数）／
+         データは揃っているか（取得状況） -->
     <div class="common-card">
-      <dl class="common-grid">
-        <div class="common-item">
-          <dt>書籍タイトル</dt>
-          <dd id="series-title" class="ellip"></dd>
-        </div>
-        <div class="common-item">
-          <dt>カテゴリコード</dt>
-          <dd id="series-code" class="mono"></dd>
-        </div>
-        <div class="common-item">
-          <dt>第1回配信日時</dt>
-          <dd id="series-first" class="mono"></dd>
-        </div>
-        <div class="common-item">
-          <dt>制作No</dt>
-          <dd id="series-prodno" class="mono"></dd>
-        </div>
-      </dl>
 
-      <div class="source-row">
-        <label for="source-select">参照元連載</label>
-        <select id="source-select"></select>
-        <span id="source-status" class="source-status"></span>
+      <div class="common-zone">
+        <h2 id="series-title" class="series-title ellip"></h2>
+
+        <dl class="common-grid">
+          <div class="common-item">
+            <dt>カテゴリコード</dt>
+            <dd id="series-code" class="mono"></dd>
+          </div>
+          <div class="common-item">
+            <dt>第1回配信日時</dt>
+            <dd id="series-first" class="mono"></dd>
+          </div>
+          <div class="common-item">
+            <dt>制作No</dt>
+            <dd id="series-prodno" class="mono"></dd>
+          </div>
+        </dl>
       </div>
 
-      <!-- 再掲連載回数。参照元の記事数を初期値にするが、ここで自由に変えられる -->
-      <div class="count-row">
-        <span class="count-label" id="count-label">再掲連載回数</span>
-
-        <div class="count-control" role="group" aria-labelledby="count-label">
-          <button type="button" id="count-minus" class="step"
-                  aria-label="再掲連載回数を1回減らす">−</button>
-          <input id="count-input" class="count-input mono" type="text"
-                 inputmode="numeric" autocomplete="off" spellcheck="false"
-                 aria-label="再掲連載回数">
-          <button type="button" id="count-plus" class="step"
-                  aria-label="再掲連載回数を1回増やす">＋</button>
-          <span class="count-unit">回</span>
+      <div class="common-zone common-zone-work">
+        <div class="source-row">
+          <label for="source-select">参照元連載</label>
+          <select id="source-select"></select>
+          <span id="source-status" class="source-status"></span>
         </div>
 
-        <span id="count-source" class="note"></span>
-        <button type="button" id="count-reset" class="copy mini">参照元の回数に戻す</button>
+        <!-- 再掲連載回数。参照元の記事数を初期値にするが、ここで自由に変えられる -->
+        <div class="count-row">
+          <span class="count-label" id="count-label">再掲連載回数</span>
+
+          <div class="count-control" role="group" aria-labelledby="count-label">
+            <button type="button" id="count-minus" class="step"
+                    aria-label="再掲連載回数を1回減らす">−</button>
+            <input id="count-input" class="count-input mono" type="text"
+                   inputmode="numeric" autocomplete="off" spellcheck="false"
+                   aria-label="再掲連載回数">
+            <button type="button" id="count-plus" class="step"
+                    aria-label="再掲連載回数を1回増やす">＋</button>
+            <span class="count-unit">回</span>
+          </div>
+
+          <span id="count-source" class="note"></span>
+          <button type="button" id="count-reset" class="copy mini">参照元の回数に戻す</button>
+        </div>
       </div>
 
-      <div class="status-row">
-        <span id="sheet-status" class="note"></span>
-        <a id="kintone-link" class="ext-link" href="#" target="_blank" rel="noopener" hidden>kintoneで開く</a>
+      <div class="common-zone common-zone-foot">
+        <div class="status-row">
+          <span id="sheet-status" class="note"></span>
+          <a id="kintone-link" class="ext-link" href="#" target="_blank" rel="noopener" hidden>kintoneで開く</a>
+        </div>
       </div>
+
     </div>
   </section>
 

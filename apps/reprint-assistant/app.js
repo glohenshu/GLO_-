@@ -864,6 +864,8 @@ function renderPrevTable() {
   state.rows.forEach((row, index) => {
     const tr = document.createElement('tr');
 
+    if (row.isFinal) tr.classList.add('is-final');
+
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
 
     // ---- 今回の記事ID ----
@@ -1213,6 +1215,10 @@ function renderBottomTable() {
 
     const tr = document.createElement('tr');
 
+    // 回ラベル列の左バーで、最終回と手当てが要る回を離れていても分かるようにする
+    if (row.isFinal) tr.classList.add('is-final');
+    if (needsAttention(link, reason)) tr.classList.add('is-flag');
+
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
     tr.appendChild(createPlannedCell(row));
     tr.appendChild(createNextCell(link, templateOnly));
@@ -1249,6 +1255,15 @@ function renderBottomTable() {
 
     el.bottomBody.appendChild(tr);
   }
+}
+
+// そのまま貼れない回かどうか。
+// コピーを止めている回と、参照元のタイトルに記号が残っている回を拾う
+function needsAttention(link, reason) {
+  if (reason) return true;
+  if (link.kind !== 'ok') return false;
+
+  return findRiskyTitleParts(link.source && link.source.articleTitle).length > 0;
 }
 
 // 今回の第N回 → 参照元の第(N+1)回。公開日時ではなく回数で突き合わせる。

@@ -1,5 +1,5 @@
 /* ============================================================
-   再掲連載作成アシスタント Ver.0.3 ── style.css
+   再掲連載作成アシスタント Ver.0.4 ── style.css
 
    既存「新連載作成アシスタント」と同じ深緑系の業務ツールUI。
 
@@ -15,24 +15,27 @@
    ============================================================ */
 
 :root {
-  --bg: #F1F3F1;
+  /* 地色は白いカードとの境目が影に頼らず立つよう、わずかに緑寄りにする */
+  --bg: #EAEEE8;
   --panel: #FFFFFF;
-  --panel-2: #F7F9F7;
-  --ink: #1A1D19;
-  --sub: #616B62;
-  --faint: #666B66;
-  --line: #DCE1DB;
-  --line-soft: #E9EDE7;
-  --accent: #1B6B52;          /* GLOツールの基調色：深緑 */
-  --accent-ink: #14513E;
-  --accent-soft: #E6F0EB;
-  --warn: #A8481F;
+  --panel-2: #F3F6F1;
+  --ink: #141810;
+  --sub: #566053;             /* 本文グレー。読めるコントラストを優先する */
+  --faint: #6E786C;
+  --line: #DBE1D6;
+  --line-soft: #EAEEE6;
+  --accent: #1B6B52;          /* GLOツールの基調色：深緑。変えない */
+  --accent-ink: #12493A;
+  --accent-soft: #E1EDE6;
+  --warn: #9C4423;
   --warn-soft: #FBEDE6;
   --code-bg: #F4F6F3;
-  --radius: 7px;
+  --radius: 8px;
   --radius-sm: 5px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --shadow: 0 1px 2px rgba(20, 34, 27, .05);
+
+  /* 1pxの硬い影ではなく、広く薄い影。カードが板ではなく紙に見える */
+  --shadow: 0 1px 1px rgba(20, 34, 27, .04), 0 6px 16px -10px rgba(20, 34, 27, .18);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -62,7 +65,7 @@ body {
 .topbar-inner {
   max-width: 1080px;
   margin: 0 auto;
-  padding: 11px 20px 12px;
+  padding: 13px 20px 14px;
 }
 
 h1 {
@@ -130,7 +133,7 @@ a:focus-visible {
   padding: 18px 20px 80px;
 }
 
-.block + .block { margin-top: 16px; }
+.block + .block { margin-top: 20px; }
 
 .hint {
   font-size: 12px;
@@ -148,11 +151,12 @@ a:focus-visible {
   grid-template-columns: max-content 1fr;
   gap: 3px 18px;
   max-width: none;
-  margin: 10px 0 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
 }
 
 .hint-defs dt {
@@ -216,29 +220,53 @@ a:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 11px 15px 12px;
+  overflow: hidden;
 }
 
+/* 帯ごとに役割を分ける。操作する帯だけ地色を変えて、触る場所を分かるようにする */
+.common-zone { padding: 16px 20px; }
+.common-zone + .common-zone { border-top: 1px solid var(--line-soft); }
+.common-zone-work { background: var(--panel-2); }
+.common-zone-foot { padding: 10px 20px 11px; }
+
+/* いま何の連載を作っているのかを最初に目に入れる */
+.series-title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: .02em;
+  margin-bottom: 7px;
+}
+
+/* 書籍タイトル以外は従属情報。1行にまとめて主役を邪魔しない */
 .common-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 2px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
 }
 
-.common-item { min-width: 0; }
+.common-item {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
 
 .common-item dt {
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: .12em;
+  letter-spacing: .1em;
   color: var(--faint);
+  white-space: nowrap;
 }
 
 .common-item dd {
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: .02em;
+  color: var(--sub);
   min-width: 0;
 }
 
@@ -264,9 +292,6 @@ a:focus-visible {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line-soft);
 }
 
 .source-row label {
@@ -311,7 +336,7 @@ a:focus-visible {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-top: 8px;
+  margin-top: 9px;
 }
 
 .count-label {
@@ -385,7 +410,6 @@ a:focus-visible {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  margin-top: 7px;
 }
 
 .ext-link {
@@ -430,6 +454,7 @@ a:focus-visible {
   border-color: var(--line);
   border-bottom: 1px solid var(--panel);
   color: var(--accent-ink);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .tabpanel {
@@ -437,7 +462,7 @@ a:focus-visible {
   border: 1px solid var(--line);
   border-top: none;
   border-radius: 0 0 var(--radius) var(--radius);
-  padding: 12px 15px 15px;
+  padding: 16px 18px 20px;
 }
 
 /* ============================================================
@@ -445,11 +470,11 @@ a:focus-visible {
    ============================================================ */
 
 .bulk {
-  background: var(--panel-2);
-  border: 1px solid var(--line-soft);
+  background: transparent;
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 9px 12px 10px;
-  margin-bottom: 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
 }
 
 .bulk label {
@@ -495,18 +520,18 @@ a:focus-visible {
 }
 
 .grid th {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: .1em;
-  color: var(--faint);
+  letter-spacing: .08em;
+  color: var(--sub);
   text-align: left;
-  padding: 0 8px 5px;
+  padding: 0 10px 7px;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
 
 .grid td {
-  padding: 6px 8px;
+  padding: 9px 10px;
   border-bottom: 1px solid var(--line-soft);
   font-size: 12.5px;
   line-height: 1.6;
@@ -515,7 +540,18 @@ a:focus-visible {
   overflow-wrap: anywhere;
 }
 
-.grid tbody tr:hover { background: var(--panel-2); }
+.grid tbody tr:hover { background: var(--accent-soft); }
+
+/* 回ラベル列に地色を敷いて「行の始まり」を作る。
+   最終回と要確認の回は左のバーで、離れて見ても区別が付くようにする */
+.grid tbody .col-ep {
+  background: var(--panel-2);
+  border-left: 2px solid transparent;
+}
+
+.grid tbody tr.is-final .col-ep { border-left-color: var(--accent); }
+.grid tbody tr.is-flag .col-ep { border-left-color: var(--warn); }
+.grid tbody tr:hover .col-ep { background: var(--accent-soft); }
 
 /* 列幅は固定。長い記事タイトルで横スクロールを出さない */
 .grid .col-ep { width: 68px; }
@@ -534,8 +570,8 @@ a:focus-visible {
 .grid-prev .col-prev { width: 29%; }
 .grid-prev .col-act { width: 118px; }
 
-/* 1行が高くならないように詰める */
-.grid-prev td { padding-top: 4px; padding-bottom: 4px; }
+/* 入力欄と文字数で元々背が高いので、記事下タブより少し詰める */
+.grid-prev td { padding-top: 6px; padding-bottom: 6px; }
 
 .col-ep {
   font-size: 12px;
@@ -709,12 +745,12 @@ button.copy:active { background: var(--accent); color: #fff; border-color: var(-
 
 /* 一度コピーした行。上から順に処理するので、どこまで進んだかを残す */
 button.copy.copied {
-  background: var(--accent-soft);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #fff;
 }
 
-button.copy.mini { padding: 3px 10px; font-size: 11px; }
+button.copy.mini { padding: 5px 12px; font-size: 11px; border-radius: var(--radius-sm); }
 
 /* 「HTMLコピー」と「コピー済み ✓」で幅が変わらないようにする */
 button.copy.prev-copy {
@@ -744,15 +780,24 @@ button.copy:disabled:hover {
   color: var(--faint);
 }
 
-/* 記事下まとめは各行の主操作なので、他のコピーより少し強く見せる */
+/* 記事下まとめは各行の主操作。押していないうちは白地にして、
+   コピー済みの1件だけが塗りつぶしで際立つようにする */
 button.copy.strong {
-  background: var(--accent-soft);
+  background: var(--panel);
   border-color: var(--accent);
   color: var(--accent-ink);
 }
 
 button.copy.strong:hover {
   background: var(--accent);
+  color: #fff;
+}
+
+/* いまクリップボードに入っている1件。塗りつぶして他とはっきり差を付ける。
+   .strong より後ろに置かないと背景を上書きされる */
+button.copy.strong.copied {
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
 }
 
@@ -772,8 +817,10 @@ button.copy.strong.template:hover {
 }
 
 button.copy.strong.template.copied {
-  background: var(--panel-2);
+  background: var(--warn);
+  border-color: var(--warn);
   border-style: solid;
+  color: #fff;
 }
 
 /* ============================================================
