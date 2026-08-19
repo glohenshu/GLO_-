@@ -204,15 +204,6 @@ h1 .ver {
 .meta .ok { color: var(--accent); }
 .meta .ng { color: var(--warn); }
 
-.temp-title code {
-  background: var(--code-bg);
-  font-family: var(--mono);
-  font-size: var(--t-xs);
-  padding: 1px var(--s2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-soft);
-}
-
 /* ---- タブ ---- */
 /* スクロールしても残すのはここだけ */
 .tabs {
@@ -491,7 +482,8 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 #bf-isbn,
 #bf-pages,
 #bf-release,
-#bf-publish {
+#bf-publish,
+#work-date {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
