@@ -140,6 +140,48 @@ a:focus-visible {
   max-width: 76ch;
 }
 
+/* 長い説明を1段落に詰めると読みにくいので、
+   「何の話か」と「その内容」を左右に分けて並べる */
+.hint-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  max-width: 88ch;
+  margin: 10px 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.hint-defs dt {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.hint-defs dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.hint-defs code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .02em;
+}
+
+/* 幅が足りないときは見出しと内容を縦に積む */
+@media (max-width: 640px) {
+  .hint-defs {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .hint-defs dt { margin-top: 8px; }
+  .hint-defs dt:first-child { margin-top: 0; }
+}
+
 .note { font-size: 11.5px; color: var(--faint); }
 .note.warn { color: var(--warn); font-weight: 600; }
 
