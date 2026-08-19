@@ -659,8 +659,29 @@ check('最後の行は参照元に次回が残っていても最終回扱い', (
   return (
     (last.isFinal &&
       link.kind === 'final' &&
-      link.html.includes('本連載は今回で最終回です')) ||
+      link.html.includes('試し読み連載は今回で最終回です')) ||
     `→ ${link.kind}`
+  );
+});
+
+check('最終回メッセージが公開済み記事と同じ書式', () => {
+  const app = setup();
+
+  // gr1896・gr1528 の公開記事に入っている形
+  const expected =
+    '<p align="center">' +
+    '<span style="font-size:16px;">試し読み連載は今回で最終回です。</span>' +
+    '</p>';
+
+  return app.buildFinalEpisodeHtml() === expected || `→ ${app.buildFinalEpisodeHtml()}`;
+});
+
+check('最終回メッセージに余白の段落を足さない（C列側に入っている）', () => {
+  const app = setup();
+
+  return (
+    !app.buildFinalEpisodeHtml().includes('<p>　</p>') ||
+    '→ 余白が二重になる'
   );
 });
 
@@ -865,8 +886,37 @@ check('最終回は今回（gr1974）の一覧へ送る', () => {
   return (
     (codes.length === 1 &&
       codes[0] === 'gr1974' &&
-      html.includes('『七つのショートしょーと［人気連載ピックアップ］』')) ||
+      html.includes('『七つのショートしょーと』')) ||
     `→ ${codes.join(',')}`
+  );
+});
+
+check('一覧リンクの書籍名から［◯◯連載ピックアップ］を外す', () => {
+  const app = setup();
+
+  // 通常回は参照元、最終回は今回。どちらもピックアップ表記は出さない
+  const normal = app.buildArticleBottomHtml(C_HTML, false);
+  const final = app.buildArticleBottomHtml(C_HTML, true);
+
+  return (
+    (!normal.includes('連載ピックアップ') &&
+      !final.includes('連載ピックアップ') &&
+      final.includes('『七つのショートしょーと』')) ||
+    '→ ピックアップ表記が残っている'
+  );
+});
+
+check('半角［］のピックアップ表記も外す', () => {
+  const app = setup();
+
+  app.state.series = {
+    ...SERIES,
+    bookTitle: '七つのショートしょーと[注目連載ピックアップ]',
+  };
+
+  return (
+    app.getListTarget(true).bookTitle === '七つのショートしょーと' ||
+    `→ ${app.getListTarget(true).bookTitle}`
   );
 });
 
@@ -918,14 +968,20 @@ check('最終回は【注目記事】を残し、【人気記事】だけ落と�
   );
 });
 
-check('［人気連載ピックアップ］を【人気記事】と誤判定しない', () => {
+check('C列に［人気連載ピックアップ］があっても【人気記事】と誤判定しない', () => {
   const app = setup();
 
-  const html = app.buildArticleBottomHtml(C_HTML, true);
+  // 【人気記事】ではなく、書籍名にピックアップ表記が入っている段落
+  const html =
+    '<p>『プレナイト［人気連載ピックアップ］』連載記事一覧はこちら</p>\n' +
+    '<p>【人気記事】消える段落</p>';
+
+  const result = app.removeDroppedParagraphs(html, true);
 
   return (
-    html.includes('［人気連載ピックアップ］') ||
-    '→ 書籍タイトルまで巻き込んで消えている'
+    (result.includes('［人気連載ピックアップ］') &&
+      !result.includes('【人気記事】')) ||
+    `→ ${result}`
   );
 });
 

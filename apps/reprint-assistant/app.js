@@ -1528,9 +1528,17 @@ function buildNextArticleHtml(articleId, articleTitle) {
   );
 }
 
-// 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く
+// 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く。
+//
+// 文言と書式は公開済みの再掲（gr1896・gr1528）に合わせている。
+// 直後の余白 <p>　</p> はスプレッドシートC列の先頭に入っているため、
+// ここでは出さない（出すと余白が二重になる）
 function buildFinalEpisodeHtml() {
-  return '<p>本連載は今回で最終回です。ご愛読ありがとうございました。</p>';
+  return (
+    '<p align="center">' +
+    '<span style="font-size:16px;">試し読み連載は今回で最終回です。</span>' +
+    '</p>'
+  );
 }
 
 // C列は「連載記事一覧 → 【イチオシ記事】 →【注目記事】→（定型文）」の並び。
@@ -1599,10 +1607,22 @@ function getListTarget(isFinal) {
 // タイトル自体に『』が付いている場合は外す。
 // テンプレート側に『』があるため二重化を防ぐ
 function stripBookTitleBrackets(value) {
-  const title = String(value || '').trim();
+  const title = stripPickupSuffix(value);
   const match = title.match(/^『(.*)』$/);
 
   return match ? match[1] : title;
+}
+
+// 一覧リンクに出す書籍名は［注目連載ピックアップ］等を外した形にする。
+//
+// 公開済みの再掲（gr1896・gr1528）はいずれも通常回・最終回とも
+// 『プレナイト』と表示しており、ピックアップ表記は入れていない。
+// APIの normalizeSeriesTitle() と同じ規則を画面側でも使う。
+function stripPickupSuffix(value) {
+  return String(value || '')
+    .replace(/［(?:注目|人気)連載ピックアップ］/g, '')
+    .replace(/\[(?:注目|人気)連載ピックアップ\]/g, '')
+    .trim();
 }
 
 // スプレッドシートC列HTMLのプレースホルダーを、
