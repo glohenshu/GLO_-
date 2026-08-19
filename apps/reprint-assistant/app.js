@@ -1,5 +1,5 @@
 /* ============================================================
-   再掲連載作成アシスタント Ver.0.3
+   再掲連載作成アシスタント Ver.0.4
 
    これからMediaWeaverで作る再掲連載の記事を組み立てるための作業支援ツール。
    今回作る記事はまだ記事データアプリに存在しないため、
@@ -840,7 +840,10 @@ function switchTab(name) {
 const PREV_TITLE_FALLBACK = '●▼■';
 
 const PREV_COPY_LABEL = 'HTMLコピー';
-const PREV_COPIED_LABEL = 'コピー済み ✓';
+
+// 一覧を見ただけでどの回までコピーしたか分かるようにする。
+// 前回記事タブと記事下タブで同じ表記にする
+const COPIED_LABEL = 'コピー済み ✓';
 
 function renderPrevTable() {
   el.prevBody.textContent = '';
@@ -1053,7 +1056,7 @@ function syncPrevCopiedState(index) {
   const copied = Boolean(row.copiedHtml);
 
   row.el.button.classList.toggle('copied', copied);
-  row.el.button.textContent = copied ? PREV_COPIED_LABEL : PREV_COPY_LABEL;
+  row.el.button.textContent = copied ? COPIED_LABEL : PREV_COPY_LABEL;
 }
 
 function buildPreviousHtmlFor(index) {
@@ -1195,19 +1198,34 @@ function renderBottomTable() {
     // 連載記事一覧の誘導先は回によって変わる（通常回＝参照元／最終回＝今回）
     const bottomHtml = hit ? buildArticleBottomHtml(hit.html, row.isFinal) : '';
 
+    const reason = bottomCopyBlockReason(link, hit, bottomHtml);
+
+    // 参照元より長く再掲するとき、続きを読むの貼り先は参照元に無い。
+    // 記事下（連載一覧＋イチオシ）まで作れなくなるのは不便なので、
+    // 続きを読むだけプレースホルダーにしたテンプレを渡す
+    const templateOnly =
+      link.kind === 'no-episode' && !sheetBlockReason(hit, bottomHtml);
+
     const tr = document.createElement('tr');
 
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
     tr.appendChild(createPlannedCell(row));
-    tr.appendChild(createNextCell(link));
+    tr.appendChild(createNextCell(link, templateOnly));
     tr.appendChild(createSheetCell(row, hit, bottomHtml));
 
     const actionCell = document.createElement('td');
     actionCell.className = 'col-act';
 
-    const reason = bottomCopyBlockReason(link, hit, bottomHtml);
-
-    if (reason) {
+    if (templateOnly) {
+      actionCell.appendChild(
+        createCopyButton(
+          '記事下テンプレをコピー',
+          () => `${buildNextArticleTemplateHtml()}\n${bottomHtml}`,
+          `続きを読むのリンク先は ${NEXT_LINK_PLACEHOLDER} のままです。MWで差し替えてください`,
+          'strong template'
+        )
+      );
+    } else if (reason) {
       actionCell.appendChild(
         createDisabledButton('記事下まとめてコピー', reason)
       );
@@ -1258,7 +1276,7 @@ function resolveNextLink(row) {
   };
 }
 
-function createNextCell(link) {
+function createNextCell(link, templateOnly) {
   const cell = document.createElement('td');
   cell.className = 'col-next';
 
@@ -1285,6 +1303,17 @@ function createNextCell(link) {
         'sub'
       )
     );
+
+    // 記事下（連載一覧＋イチオシ）だけは作れるので、
+    // 続きを読むの貼り先が空のテンプレとして渡す
+    if (templateOnly) {
+      cell.appendChild(
+        createLine(
+          `テンプレは ${NEXT_LINK_PLACEHOLDER} のままです。MWで差し替えてください`,
+          'sub faint'
+        )
+      );
+    }
 
     return cell;
   }
@@ -1496,6 +1525,12 @@ function bottomCopyBlockReason(link, hit, bottomHtml) {
     return '参照元に記事IDがありません';
   }
 
+  return sheetBlockReason(hit, bottomHtml);
+}
+
+// 記事下リンク（連載一覧＋イチオシ）側だけの事情。
+// 続きを読むが作れない回でも、この部分は貼れることがある
+function sheetBlockReason(hit, bottomHtml) {
   if (state.sheetStatus !== 'ok') {
     return state.sheetMessage
       ? `記事下データを取得できませんでした（${state.sheetMessage}）`
@@ -1526,6 +1561,15 @@ function buildNextArticleHtml(articleId, articleTitle) {
     `</a>` +
     `</span></p>`
   );
+}
+
+// 参照元に該当回が無いときのテンプレ。
+// 記事IDは分からないので、そのままでは踏めない目印を残す。
+// タイトルは前回記事タブと同じ ●▼■ を使う
+const NEXT_LINK_PLACEHOLDER = '●●●●●';
+
+function buildNextArticleTemplateHtml() {
+  return buildNextArticleHtml(NEXT_LINK_PLACEHOLDER, PREV_TITLE_FALLBACK);
 }
 
 // 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く。
@@ -1926,6 +1970,7 @@ function createCopyButton(label, getText, toastMessage, modifier) {
     copyText(text).then((ok) => {
       if (ok) {
         button.classList.add('copied');
+        button.textContent = COPIED_LABEL;
         showToast(toastMessage);
       } else {
         showToast('コピーできませんでした');

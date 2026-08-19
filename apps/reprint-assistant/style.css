@@ -682,6 +682,12 @@ button.copy.prev-copy {
 /* 一覧を見ただけでコピー済みの回が分かるようにする */
 button.copy.prev-copy.copied { font-weight: 700; }
 
+/* 「記事下まとめてコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.strong {
+  min-width: 152px;
+  white-space: nowrap;
+}
+
 button.copy:disabled {
   background: transparent;
   border-color: var(--line);
@@ -705,6 +711,26 @@ button.copy.strong {
 button.copy.strong:hover {
   background: var(--accent);
   color: #fff;
+}
+
+/* 参照元に該当回が無い行のテンプレ。
+   そのままでは貼れない（リンク先を差し替える）ことを見た目でも示す */
+button.copy.strong.template {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+button.copy.strong.template:hover {
+  background: var(--panel-2);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+button.copy.strong.template.copied {
+  background: var(--panel-2);
+  border-style: solid;
 }
 
 /* ============================================================

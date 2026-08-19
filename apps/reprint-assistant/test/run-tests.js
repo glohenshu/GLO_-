@@ -163,13 +163,13 @@ const APP_SOURCE =
 ;globalThis.__exports = {
   state, el,
   MIN_EPISODE_COUNT, MAX_EPISODE_COUNT,
-  PREV_TITLE_FALLBACK, PREV_COPY_LABEL, PREV_COPIED_LABEL,
+  PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, NEXT_LINK_PLACEHOLDER,
   applySourceSelection, setEpisodeCount, parseCountInput, clampEpisodeCount,
   buildRows, renderPrevTable, renderBottomTable, updatePrevRow,
   applyBulkIds, clearArticleIds,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
   buildNextArticleHtml, buildArticleBottomHtml, buildFinalEpisodeHtml,
-  removeDroppedParagraphs, getListTarget,
+  removeDroppedParagraphs, getListTarget, sheetBlockReason, buildNextArticleTemplateHtml,
   resolveNextLink, bottomCopyBlockReason, findSheetRowForRow,
   parsePeriodParts, assignRowYears, fmtPeriodRange,
 };
@@ -346,20 +346,38 @@ function group(name) {
   currentGroup = name;
 }
 
+// コピー処理だけは非同期なので、Promiseを返すテストも受け付ける。
+// 実行順は変えたくないので、結果の器だけ先に並べて後から埋める
+const pending = [];
+
 function check(name, fn) {
-  let ok = false;
-  let detail = '';
+  const entry = { group: currentGroup, name, ok: false, detail: '' };
+
+  results.push(entry);
+
+  const settle = (value) => {
+    entry.ok = value === true;
+    if (!entry.ok) {
+      entry.detail = typeof value === 'string' ? value : '期待と異なります';
+    }
+  };
+
+  const fail = (error) => {
+    entry.ok = false;
+    entry.detail = `例外：${error && error.message}`;
+  };
 
   try {
     const value = fn();
-    ok = value === true;
-    if (!ok) detail = typeof value === 'string' ? value : '期待と異なります';
-  } catch (error) {
-    ok = false;
-    detail = `例外：${error && error.message}`;
-  }
 
-  results.push({ group: currentGroup, name, ok, detail });
+    if (value && typeof value.then === 'function') {
+      pending.push(value.then(settle, fail));
+    } else {
+      settle(value);
+    }
+  } catch (error) {
+    fail(error);
+  }
 }
 
 // ============================================================
@@ -569,7 +587,7 @@ check('前回タイトルを変えるとコピー済みが外れる', () => {
   app.state.copiedStash.set(row.number, row.copiedHtml);
   app.updatePrevRow(1);
 
-  const copied = row.el.button.textContent === app.PREV_COPIED_LABEL;
+  const copied = row.el.button.textContent === app.COPIED_LABEL;
 
   typeInto(app, 0, { title: '直したタイトル' });
 
@@ -697,6 +715,67 @@ check('参照元の回数を超えたらHTMLを作らず理由を出す', () => 
       !link.html &&
       reason === '参照元に該当回がありません') ||
     `→ ${link.kind} / ${reason}`
+  );
+});
+
+check('参照元を超えた回はテンプレをコピーできる', () => {
+  const app = setup({ episodeCount: 9 });
+
+  // 第8回 → 参照元 第9回（参照元は8回まで）。最終回は第9回なので通常回扱い
+  const cell = findNodes(
+    app.el.bottomBody.children[7],
+    (n) => n.className.includes('col-act')
+  )[0];
+  const button = cell.children[0];
+
+  return (
+    (button.textContent === '記事下テンプレをコピー' &&
+      button.disabled === false &&
+      button.className.includes('template')) ||
+    `→ ${button.textContent} / disabled=${button.disabled}`
+  );
+});
+
+check('テンプレは続きを読むのリンク先をプレースホルダーにする', () => {
+  const app = setup();
+
+  const html = app.buildNextArticleTemplateHtml();
+
+  return (
+    (html.includes('/articles/-/●●●●●') &&
+      html.includes('●▼■') &&
+      html.includes('▶この話の続きを読む')) ||
+    `→ ${html}`
+  );
+});
+
+check('テンプレでも記事下（一覧＋イチオシ）は正しく作る', () => {
+  const app = setup({ episodeCount: 9 });
+
+  const row = app.state.rows[7];
+  const hit = app.findSheetRowForRow(row);
+  const bottomHtml = app.buildArticleBottomHtml(hit.html, row.isFinal);
+
+  return (
+    (bottomHtml.includes('/category/gr1334') &&
+      bottomHtml.includes('【イチオシ記事】') &&
+      !bottomHtml.includes('【注目記事】')) ||
+    '→ 記事下の中身が通常回と違う'
+  );
+});
+
+check('シートが取れないときはテンプレも渡さない', () => {
+  const app = setup({ episodeCount: 9, sheetRows: null, sheetStatus: 'error' });
+
+  const cell = findNodes(
+    app.el.bottomBody.children[7],
+    (n) => n.className.includes('col-act')
+  )[0];
+  const button = cell.children[0];
+
+  return (
+    button.disabled === true ||
+    `→ ${button.textContent} / disabled=${button.disabled}`
   );
 });
 
@@ -1169,6 +1248,25 @@ check('記事下に一覧リンクの注記を出さない', () => {
   return !text.includes('一覧：/category/') || '→ 一覧の注記が残っている';
 });
 
+check('記事下をコピーするとボタンが「コピー済み ✓」になる', async () => {
+  const app = setup();
+
+  const cell = findNodes(
+    app.el.bottomBody.children[0],
+    (n) => n.className.includes('col-act')
+  )[0];
+  const button = cell.children[0];
+
+  button.dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  return (
+    (button.textContent === app.COPIED_LABEL &&
+      button.className.includes('copied')) ||
+    `→ ${button.textContent}`
+  );
+});
+
 check('記事タイトル欄に例文のプレースホルダーを置かない', () => {
   const app = setup();
 
@@ -1222,26 +1320,26 @@ check('参照元が未選択のときは作業行を作らない', () => {
 // 結果
 // ============================================================
 
-let lastGroup = '';
-let ng = 0;
+Promise.all(pending).then(() => {
+  let lastGroup = '';
+  let ng = 0;
 
-for (const result of results) {
-  if (result.group !== lastGroup) {
-    console.log(`\n[${result.group}]`);
-    lastGroup = result.group;
+  for (const result of results) {
+    if (result.group !== lastGroup) {
+      console.log(`\n[${result.group}]`);
+      lastGroup = result.group;
+    }
+
+    if (result.ok) {
+      console.log(`  OK  ${result.name}`);
+    } else {
+      ng++;
+      console.log(`  NG  ${result.name}`);
+      if (result.detail) console.log(`      ${result.detail}`);
+    }
   }
 
-  if (result.ok) {
-    console.log(`  OK  ${result.name}`);
-  } else {
-    ng++;
-    console.log(`  NG  ${result.name}`);
-    if (result.detail) console.log(`      ${result.detail}`);
-  }
-}
+  console.log(`\n${results.length}件中 ${results.length - ng}件OK / ${ng}件NG`);
 
-console.log(
-  `\n${results.length}件中 ${results.length - ng}件OK / ${ng}件NG`
-);
-
-process.exit(ng ? 1 : 0);
+  process.exit(ng ? 1 : 0);
+});
