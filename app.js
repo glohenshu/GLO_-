@@ -98,10 +98,38 @@ $('tabs').addEventListener('click', (e) => {
 $('fetch-btn').addEventListener('click', fetchInfo);
 $('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchInfo(); });
 
+// 入力欄は数字だけを持ち、頭の「gr」は画面に固定表示している。
+// API・表示・本文テンプレートの置換はいずれもカテゴリID（gr1966）の
+// 形を前提にしているため、ここで組み立てて全箇所で使う。
+function currentCategoryCode() {
+  const digits = $('code-input').value.replace(/[^0-9]/g, '');
+  return digits ? `gr${digits}` : '';
+}
+
+// 半角数字だけを受け付ける。
+// ・全角数字はIMEの状態によって入りやすいので半角へ直す
+// ・「gr1966」をそのまま貼り付けたときは gr を落として数字だけ残す
+// ・それ以外の文字は捨てる
+$('code-input').addEventListener('input', (e) => {
+  const el = e.target;
+  const before = el.value;
+  const after = before
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/^[\s]*[gGｇＧ][rRｒＲ]/, '')
+    .replace(/[^0-9]/g, '');
+
+  if (after === before) return;
+
+  // 消えた文字数のぶんだけカーソルを戻す
+  const caret = Math.max(0, (el.selectionStart ?? after.length) - (before.length - after.length));
+  el.value = after;
+  el.setSelectionRange(caret, caret);
+});
+
 async function fetchInfo() {
-  const code = $('code-input').value.trim();
+  const code = currentCategoryCode();
   const status = $('fetch-status');
-  if (!code) { status.textContent = 'カテゴリコードを入力してください'; status.classList.add('error'); return; }
+  if (!code) { status.textContent = 'カテゴリコードの番号を入力してください（半角数字）'; status.classList.add('error'); return; }
 
   status.classList.remove('error');
   status.textContent = '取得中…';
@@ -195,7 +223,7 @@ function renderBasicInfo(data) {
   const rec = state.record || {};
   $('basic-info').hidden = false;
   $('info-title').textContent = rec.bookTitle || '（書籍タイトル未取得）';
-  $('info-category').textContent = rec.categoryId || $('code-input').value.trim();
+  $('info-category').textContent = rec.categoryId || currentCategoryCode();
   $('info-prodno').textContent = rec.productionNo || '—';
   $('info-delivery').textContent = fmtDelivery(rec.firstDelivery) || '—';
 
@@ -797,7 +825,7 @@ function buildTemplateHtml(cHtml) {
   // カテゴリコード
   const categoryCode = String(
     state.record?.categoryId ||
-    $('code-input').value.trim() ||
+    currentCategoryCode() ||
     ''
   ).trim();
 
