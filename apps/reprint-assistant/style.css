@@ -97,19 +97,47 @@ h1 .ver {
   letter-spacing: .12em;
 }
 
-#code-input {
-  width: 132px;
-  padding: 7px 12px;
+/* gr は入力欄の一部として固定表示する。打つのは数字だけ */
+.code-field {
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 0 12px;
+}
+
+/* 入力欄の枠は input ではなくこちらに出す。キーボード操作でも位置が分かるようにする */
+.code-field:focus-within {
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.code-prefix {
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: .1em;
+  color: var(--faint);
+  user-select: none;
+}
+
+#code-input {
+  width: 92px;
+  padding: 7px 0 7px 1px;
+  border: 0;
+  background: transparent;
   font-size: 14px;
   font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
   letter-spacing: .1em;
-  background: var(--panel-2);
   color: var(--ink);
 }
 
-#code-input:focus { border-color: var(--accent); background: var(--panel); }
+#code-input:focus { outline: none; }
+
+/* 枠は .code-field 側に出す */
+#code-input:focus-visible { outline: none; }
 
 .fetch-status { font-size: 12px; color: var(--sub); }
 .fetch-status.error { color: var(--warn); }

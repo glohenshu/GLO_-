@@ -165,6 +165,7 @@ const APP_SOURCE =
   MIN_EPISODE_COUNT, MAX_EPISODE_COUNT,
   PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, NEXT_LINK_PLACEHOLDER,
   applySourceSelection, setEpisodeCount, parseCountInput, clampEpisodeCount,
+  getCategoryCode, toCategoryDigits, hasUnusableCodeChars,
   buildRows, renderPrevTable, renderBottomTable, updatePrevRow,
   applyBulkIds, clearArticleIds,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
@@ -383,6 +384,98 @@ function check(name, fn) {
 // ============================================================
 // 1. 回数入力
 // ============================================================
+
+group('カテゴリコード入力');
+
+check('数字だけ入力すると gr を付けて問い合わせる', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = '1974';
+
+  return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
+});
+
+check('gr 付きで貼り付けても二重にならない', () => {
+  const app = loadApp();
+
+  const cases = ['gr1974', 'GR1974', ' gr1974 '];
+  const got = cases.map((value) => {
+    app.el.codeInput.value = value;
+    return app.getCategoryCode();
+  });
+
+  return got.every((code) => code === 'gr1974') || `→ ${got.join(',')}`;
+});
+
+check('全角数字を半角に直す', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = '１９７４';
+
+  return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
+});
+
+check('数字以外は落とす', () => {
+  const app = loadApp();
+
+  return (
+    (app.toCategoryDigits('19a74') === '1974' &&
+      app.toCategoryDigits('19-74') === '1974' &&
+      app.toCategoryDigits('あ') === '') ||
+    `→ ${app.toCategoryDigits('19a74')} / ${app.toCategoryDigits('19-74')}`
+  );
+});
+
+check('空欄なら問い合わせないよう空文字を返す', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = '   ';
+
+  return app.getCategoryCode() === '' || `→ ${app.getCategoryCode()}`;
+});
+
+check('入力欄で数字以外を打つと取り除いて理由を出す', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = '19a74';
+  app.el.codeInput.dispatch('input');
+
+  return (
+    (app.el.codeInput.value === '1974' &&
+      app.el.fetchStatus.textContent.includes('半角数字') &&
+      app.el.fetchStatus.className.includes('error')) ||
+    `→ ${app.el.codeInput.value} / ${app.el.fetchStatus.textContent}`
+  );
+});
+
+check('全角数字と gr は黙って直す（咎めない）', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = 'gr１９７４';
+  app.el.codeInput.dispatch('input');
+
+  return (
+    (app.el.codeInput.value === '1974' &&
+      !app.el.fetchStatus.className.includes('error')) ||
+    `→ ${app.el.codeInput.value} / ${app.el.fetchStatus.textContent}`
+  );
+});
+
+check('直したあとは警告が消える', () => {
+  const app = loadApp();
+
+  app.el.codeInput.value = '19a74';
+  app.el.codeInput.dispatch('input');
+
+  app.el.codeInput.value = '1975';
+  app.el.codeInput.dispatch('input');
+
+  return (
+    (!app.el.fetchStatus.className.includes('error') &&
+      app.el.fetchStatus.textContent === '') ||
+    `→ ${app.el.fetchStatus.textContent}`
+  );
+});
 
 group('回数入力');
 
