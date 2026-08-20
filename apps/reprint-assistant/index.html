@@ -90,6 +90,15 @@
           <span id="count-source" class="note"></span>
           <button type="button" id="count-reset" class="copy mini">参照元の回数に戻す</button>
         </div>
+
+        <!-- 記事下タブの最終回で使う。表の上に置くと選択・コピーの邪魔になるのでここに置く -->
+        <div class="final-row">
+          <label for="final-message">最終回の文言</label>
+          <select id="final-message">
+            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
+            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
+          </select>
+        </div>
       </div>
 
       <div class="common-zone common-zone-foot">
@@ -151,16 +160,6 @@
 
     <!-- ---- ② 記事下 ---- -->
     <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
-
-      <div class="next-settings">
-        <div class="next-field">
-          <label for="final-message">最終回の文言</label>
-          <select id="final-message">
-            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
-            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
-          </select>
-        </div>
-      </div>
 
       <dl class="hint hint-defs">
         <dt>この話の続きを読む</dt>
