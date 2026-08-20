@@ -303,7 +303,7 @@ el.nextCopyAll.addEventListener('click', () => {
 
 el.finalMessage.addEventListener('change', () => {
   state.finalMessage = el.finalMessage.value;
-  renderBottomTable();
+  renderNextTable();
 });
 
 el.bulkApply.addEventListener('click', () => {
@@ -558,8 +558,6 @@ function renderCommon() {
   }
 
   renderSheetStatus();
-
-  el.finalMessage.value = state.finalMessage;
 
   el.sectionCommon.hidden = false;
 }
@@ -1442,9 +1440,11 @@ function createNextCell(link, templateOnly) {
   const cell = document.createElement('td');
   cell.className = 'col-next';
 
+  // 最終回に「続き」は無い。ここに文言を出すと、記事下にそのまま貼る文だと
+  // 誤解されるので出さない（実際に貼る文言はコピーしたHTMLに入っている）
   if (link.kind === 'final') {
     cell.appendChild(
-      createLine('本連載は今回で最終回です。ご愛読ありがとうございました。', 'final')
+      createLine('—', 'faint', '最終回のため、続きを読むはありません')
     );
     return cell;
   }
@@ -1813,6 +1813,38 @@ function renderNextTable() {
 
     el.nextBody.appendChild(tr);
   });
+
+  el.nextBody.appendChild(createFinalMessageRow());
+}
+
+// 指定件数の後ろに置く最終回の行。文言は画面の選択に従う
+function createFinalMessageRow() {
+  const tr = document.createElement('tr');
+  tr.classList.add('is-final');
+
+  tr.appendChild(createCell('最終回', 'col-ep ep-no'));
+  tr.appendChild(createCell('—', 'col-date'));
+
+  const cell = document.createElement('td');
+  cell.appendChild(createLine(FINAL_MESSAGES[state.finalMessage], 'final'));
+  tr.appendChild(cell);
+
+  const actionCell = document.createElement('td');
+  actionCell.className = 'col-act';
+
+  actionCell.appendChild(
+    createCopyButton(
+      'HTMLコピー',
+      () => buildFinalMessageHtml(),
+      '最終回の文言をコピーしました',
+      'next-copy',
+      state.nextCopyButtons
+    )
+  );
+
+  tr.appendChild(actionCell);
+
+  return tr;
 }
 
 function buildNextUpdateHtml(date, time) {
@@ -1826,9 +1858,14 @@ function buildNextUpdateHtmlAll() {
 
   if (!start || !time) return '';
 
-  return buildNextUpdateDates(start, state.nextCount)
-    .map((date) => buildNextUpdateHtml(date, time))
-    .join('\n');
+  const lines = buildNextUpdateDates(start, state.nextCount).map((date) =>
+    buildNextUpdateHtml(date, time)
+  );
+
+  // 画面の並びと同じく、最後に最終回の文言を足す
+  lines.push(buildFinalMessageHtml());
+
+  return lines.join('\n');
 }
 
 // 入力欄は type="date" なので "2026-08-29" の形で来る
@@ -1935,7 +1972,14 @@ const FINAL_MESSAGES = {
   series: '本連載は今回で最終回です。ご愛読ありがとうございました。',
 };
 
+// ②記事下タブの最終回はこの文言で固定。
+// 文言を選べるのは③次回更新日タブだけ
 function buildFinalEpisodeHtml() {
+  return `<p align="center">${FINAL_MESSAGES.trial}</p>`;
+}
+
+// ③次回更新日タブ用。画面で選んだ方の文言を返す
+function buildFinalMessageHtml() {
   const text = FINAL_MESSAGES[state.finalMessage] || FINAL_MESSAGES.trial;
 
   return `<p align="center">${text}</p>`;
