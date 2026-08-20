@@ -105,7 +105,8 @@
   <!-- ============================================================
        タブ
        ============================================================ -->
-  <section id="section-tabs" class="block" hidden>
+  <!-- ③ 次回更新日は連載を取得していなくても使えるので、タブ自体は最初から出す -->
+  <section id="section-tabs" class="block">
 
     <div class="tabs" role="tablist">
       <button type="button" class="tab is-active" id="tab-prev"
@@ -151,6 +152,16 @@
     <!-- ---- ② 記事下 ---- -->
     <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
 
+      <div class="next-settings">
+        <div class="next-field">
+          <label for="final-message">最終回の文言</label>
+          <select id="final-message">
+            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
+            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
+          </select>
+        </div>
+      </div>
+
       <dl class="hint hint-defs">
         <dt>この話の続きを読む</dt>
         <dd>今回の第N回 → 参照元の第N+1回。最後の行は参照元に次の回が残っていても必ず最終回として扱います。</dd>
@@ -186,39 +197,56 @@
     <!-- ---- ③ 次回更新日 ---- -->
     <div class="tabpanel" id="panel-next" role="tabpanel" aria-labelledby="tab-next" hidden>
 
+      <!-- このタブだけは連載の情報を使わない。
+           開始日・時刻・件数を入れれば、カテゴリコードを取得しなくても作れる -->
       <div class="next-settings">
+        <div class="next-field">
+          <label for="next-start">開始日</label>
+          <input id="next-start" type="date">
+        </div>
+
         <div class="next-field">
           <label for="next-time">更新時刻</label>
           <input id="next-time" type="time" step="60">
-          <span class="note">第1回配信日時の時刻を初期値にしています</span>
         </div>
 
         <div class="next-field">
-          <label for="final-message">最終回の文言</label>
-          <select id="final-message">
-            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
-            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
-          </select>
-          <span class="note">記事下タブの最終回でも同じ文言を使います</span>
+          <label class="count-label" id="next-count-label">作る件数</label>
+
+          <div class="count-control" role="group" aria-labelledby="next-count-label">
+            <button type="button" id="next-count-minus" class="step"
+                    aria-label="作る件数を1件減らす">−</button>
+            <input id="next-count" class="count-input mono" type="text"
+                   inputmode="numeric" autocomplete="off" spellcheck="false"
+                   aria-label="作る件数">
+            <button type="button" id="next-count-plus" class="step"
+                    aria-label="作る件数を1件増やす">＋</button>
+            <span class="count-unit">件</span>
+          </div>
         </div>
+
+        <button type="button" id="next-copy-all" class="copy mini">全件まとめてコピー</button>
       </div>
 
       <dl class="hint hint-defs">
-        <dt>次回更新日</dt>
-        <dd>その回の1つ後の回の公開予定日を使います（第1回 → 第2回の公開予定日）。月や年をまたいでも自動で切り替わります。</dd>
+        <dt>作り方</dt>
+        <dd>開始日から1日ずつ進めて、指定した件数ぶん作ります。曜日は日付から自動で計算します。</dd>
+
+        <dt>月・年またぎ</dt>
+        <dd>7月31日の次は8月1日、12月31日の次は1月1日と自動で切り替わります。</dd>
 
         <dt>更新時刻</dt>
-        <dd>全回に同じ時刻を使います。分が0のときは「21時」、それ以外は「21時30分」と出します。</dd>
+        <dd>全件に同じ時刻を使います。分が0のときは「21時」、それ以外は「21時30分」と出します。</dd>
 
-        <dt>最終回</dt>
-        <dd>次の更新がないので、選んだ最終回の文言を出します。</dd>
+        <dt>連載との関係</dt>
+        <dd>このタブは連載の情報を使いません。カテゴリコードを取得していなくても作れます。</dd>
       </dl>
 
       <table class="grid grid-next">
         <thead>
           <tr>
-            <th class="col-ep">回</th>
-            <th class="col-date">公開予定</th>
+            <th class="col-ep">件</th>
+            <th class="col-date">日付</th>
             <th>次回更新日</th>
             <th class="col-act">操作</th>
           </tr>

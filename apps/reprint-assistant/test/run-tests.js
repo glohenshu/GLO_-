@@ -173,8 +173,10 @@ const APP_SOURCE =
   removeDroppedParagraphs, getListTarget, sheetBlockReason, buildNextArticleTemplateHtml,
   resolveNextLink, bottomCopyBlockReason, findSheetRowForRow,
   parsePeriodParts, assignRowYears, fmtPeriodRange,
-  renderNextTable, fmtNextUpdate, parseTimeInput, defaultNextTime, renderCommon,
-  buildNextUpdateHtmlFor, switchTab, FINAL_MESSAGES,
+  renderNextTable, fmtNextUpdate, parseTimeInput, parseDateInput, renderCommon,
+  buildNextUpdateHtml, buildNextUpdateHtmlAll, buildNextUpdateDates,
+  setNextCount, initNextTab, fmtDateInput, switchTab, FINAL_MESSAGES,
+  MIN_NEXT_COUNT, MAX_NEXT_COUNT,
 };
 `;
 
@@ -1324,40 +1326,93 @@ check('C列が空の週はコピーを止める', () => {
 
 group('次回更新日');
 
-// 次回更新日タブの1行ぶんを取り出す
-function nextRowOf(app, index) {
-  return app.el.nextBody.children[index];
-}
+// 連載を読み込まずに、開始日・時刻・件数だけで組み立てる
+function setupNext(options = {}) {
+  const app = loadApp();
 
-check('第N回は第N+1回の公開予定日を使う', () => {
-  const app = setup();
+  app.state.nextStart = options.start === undefined ? '2026-08-29' : options.start;
+  app.state.nextTime = options.time === undefined ? '21:00' : options.time;
+  app.state.nextCount = options.count === undefined ? 8 : options.count;
 
-  // 第1回 8/28（金）→ 第2回 8/29（土）
-  const text = textOf(nextRowOf(app, 0));
-
-  return (
-    text.includes('次回更新は8月29日(土)、19時の予定です。') || `→ ${text}`
-  );
-});
-
-check('更新時刻は第1回配信日時の時刻を初期値にする', () => {
-  const app = setup();
-
-  return (
-    (app.state.nextTime === '19:00' && app.el.nextTime.value === '19:00') ||
-    `→ ${app.state.nextTime}`
-  );
-});
-
-check('更新時刻を変えると全回に効く', () => {
-  const app = setup();
-
-  app.state.nextTime = '21:00';
   app.renderNextTable();
 
-  const text = textOf(nextRowOf(app, 0));
+  return app;
+}
 
-  return text.includes('21時の予定です。') || `→ ${text}`;
+function nextRowsOf(app) {
+  return app.el.nextBody.children.map((tr) =>
+    tr.children.map((td) => textOf(td).replace(/\s+/g, ' ').trim())
+  );
+}
+
+check('連載を読み込まなくても作れる', () => {
+  const app = setupNext();
+
+  return (
+    (app.state.series === null && app.el.nextBody.children.length === 8) ||
+    `→ ${app.el.nextBody.children.length}件`
+  );
+});
+
+check('指定した件数ぶん作る', () => {
+  const got = [1, 5, 30].map((count) => setupNext({ count }).el.nextBody.children.length);
+
+  return got.join(',') === '1,5,30' || `→ ${got.join(',')}`;
+});
+
+check('開始日から1日ずつ進める', () => {
+  const app = setupNext({ count: 3 });
+
+  const got = nextRowsOf(app).map((cells) => cells[2]);
+
+  return (
+    got.join(' / ') ===
+      '次回更新は8月29日(土)、21時の予定です。 / 次回更新は8月30日(日)、21時の予定です。 / 次回更新は8月31日(月)、21時の予定です。' ||
+    `→ ${got.join(' / ')}`
+  );
+});
+
+check('曜日を日付から自動で計算する', () => {
+  const app = loadApp();
+
+  // 2026/8/29は土曜、8/30は日曜
+  return (
+    (app.fmtNextUpdate(new Date(2026, 7, 29), { hh: 21, mi: 0 }).includes('(土)') &&
+      app.fmtNextUpdate(new Date(2026, 7, 30), { hh: 21, mi: 0 }).includes('(日)')) ||
+    '→ 曜日が合わない'
+  );
+});
+
+check('月をまたぐと月表記が切り替わる', () => {
+  const app = setupNext({ start: '2026-07-30', count: 4 });
+
+  const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
+
+  return (
+    got.join(' / ') === '7月30日(木) / 7月31日(金) / 8月1日(土) / 8月2日(日)' ||
+    `→ ${got.join(' / ')}`
+  );
+});
+
+check('年をまたぐと年をまたいで進む', () => {
+  const app = setupNext({ start: '2026-12-30', count: 4 });
+
+  const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
+
+  return (
+    got.join(' / ') === '12月30日(水) / 12月31日(木) / 1月1日(金) / 1月2日(土)' ||
+    `→ ${got.join(' / ')}`
+  );
+});
+
+check('うるう年の2月29日をまたげる', () => {
+  const app = setupNext({ start: '2028-02-28', count: 3 });
+
+  const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
+
+  return (
+    got.join(' / ') === '2月28日(月) / 2月29日(火) / 3月1日(水)' || `→ ${got.join(' / ')}`
+  );
 });
 
 check('分が0でないときは「21時30分」と出す', () => {
@@ -1374,114 +1429,56 @@ check('分が0でないときは「21時30分」と出す', () => {
   );
 });
 
-check('月をまたぐと月表記が切り替わる', () => {
+check('生成HTMLは <p align="center"> の1段落', () => {
   const app = loadApp();
 
-  // 2026/7/31（金）→ 2026/8/1（土）
   return (
-    (app.fmtNextUpdate(new Date(2026, 6, 31), { hh: 21, mi: 0 }) ===
-      '次回更新は7月31日(金)、21時の予定です。' &&
-      app.fmtNextUpdate(new Date(2026, 7, 1), { hh: 21, mi: 0 }) ===
-        '次回更新は8月1日(土)、21時の予定です。') ||
-    `→ ${app.fmtNextUpdate(new Date(2026, 7, 1), { hh: 21, mi: 0 })}`
+    app.buildNextUpdateHtml(new Date(2026, 6, 13), { hh: 21, mi: 0 }) ===
+      '<p align="center">次回更新は7月13日(月)、21時の予定です。</p>' ||
+    `→ ${app.buildNextUpdateHtml(new Date(2026, 6, 13), { hh: 21, mi: 0 })}`
   );
 });
 
-check('連載が月をまたいでも各回の次回更新日が正しい', () => {
-  // 第1回 2026/7/30 19:00 から5回。7/31 → 8/1 → 8/2 とまたぐ
-  const app = setup({
-    episodeCount: 5,
-    series: { ...SERIES, firstDeliveryAt: '2026-07-30T10:00:00Z' },
-  });
-
-  const got = [0, 1, 2, 3].map((index) => {
-    const text = textOf(nextRowOf(app, index));
-    const match = text.match(/次回更新は([^、]+)、/);
-    return match ? match[1] : '(なし)';
-  });
+check('全件まとめてコピーは1行ずつ改行でつなぐ', () => {
+  const app = setupNext({ start: '2026-07-31', count: 2 });
 
   return (
-    got.join(' / ') === '7月31日(金) / 8月1日(土) / 8月2日(日) / 8月3日(月)' ||
-    `→ ${got.join(' / ')}`
+    app.buildNextUpdateHtmlAll() ===
+      '<p align="center">次回更新は7月31日(金)、21時の予定です。</p>\n' +
+        '<p align="center">次回更新は8月1日(土)、21時の予定です。</p>' ||
+    `→ ${app.buildNextUpdateHtmlAll()}`
   );
 });
 
-check('年をまたいでも切り替わる', () => {
-  // 第1回 2026/12/30 19:00 から3回
-  const app = setup({
-    episodeCount: 3,
-    series: { ...SERIES, firstDeliveryAt: '2026-12-30T10:00:00Z' },
-  });
-
-  const got = [0, 1].map((index) => {
-    const text = textOf(nextRowOf(app, index));
-    const match = text.match(/次回更新は([^、]+)、/);
-    return match ? match[1] : '(なし)';
-  });
-
-  return got.join(' / ') === '12月31日(木) / 1月1日(金)' || `→ ${got.join(' / ')}`;
-});
-
-check('生成HTMLは <p align="center"> の1段落', () => {
-  const app = setup();
-
-  const html = app.buildNextUpdateHtmlFor(
-    app.state.rows[0],
-    app.state.rows[1],
-    { hh: 21, mi: 0 }
-  );
+check('開始日が空なら作らない', () => {
+  const app = setupNext({ start: '' });
 
   return (
-    html === '<p align="center">次回更新は8月29日(土)、21時の予定です。</p>' ||
-    `→ ${html}`
+    (textOf(app.el.nextBody).includes('開始日を入力してください') &&
+      app.buildNextUpdateHtmlAll() === '') ||
+    `→ ${textOf(app.el.nextBody)}`
   );
 });
 
-check('最終回は選んだ最終回の文言を出す', () => {
-  const app = setup();
-
-  const last = app.state.rows[app.state.rows.length - 1];
-  const trial = app.buildNextUpdateHtmlFor(last, undefined, { hh: 21, mi: 0 });
-
-  app.state.finalMessage = 'series';
-  const series = app.buildNextUpdateHtmlFor(last, undefined, { hh: 21, mi: 0 });
+check('更新時刻が空なら作らない', () => {
+  const app = setupNext({ time: '' });
 
   return (
-    (trial ===
-      '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>' &&
-      series ===
-        '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>') ||
-    `→ ${trial} / ${series}`
+    textOf(app.el.nextBody).includes('更新時刻を入力してください') ||
+    `→ ${textOf(app.el.nextBody)}`
   );
 });
 
-check('最終回の文言は記事下タブでも同じものを使う', () => {
-  const app = setup();
-
-  app.state.finalMessage = 'series';
+check('ありえない日付は受け付けない', () => {
+  const app = loadApp();
 
   return (
-    app.buildFinalEpisodeHtml() ===
-      '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
-    `→ ${app.buildFinalEpisodeHtml()}`
-  );
-});
-
-check('更新時刻が空ならコピーを止める', () => {
-  const app = setup();
-
-  app.state.nextTime = '';
-  app.renderNextTable();
-
-  const button = findNodes(
-    nextRowOf(app, 0),
-    (n) => n.tagName === 'BUTTON'
-  )[0];
-
-  return (
-    (button.disabled === true &&
-      textOf(nextRowOf(app, 0)).includes('更新時刻を入力してください')) ||
-    `→ disabled=${button.disabled}`
+    (app.parseDateInput('2026-08-29') &&
+      app.parseDateInput('2026-02-31') === null &&
+      app.parseDateInput('2026-13-01') === null &&
+      app.parseDateInput('') === null &&
+      app.parseDateInput('2026/08/29') === null) ||
+    '→ 日付の判定が期待と違う'
   );
 });
 
@@ -1499,29 +1496,73 @@ check('読めない時刻は受け付けない', () => {
   );
 });
 
-check('第1回配信日時が無ければ次回更新日を出さない', () => {
-  const app = setup({ series: { ...SERIES, firstDeliveryAt: '' } });
+check('件数は1〜200に丸める', () => {
+  const app = setupNext();
 
-  const button = findNodes(
-    nextRowOf(app, 0),
-    (n) => n.tagName === 'BUTTON'
-  )[0];
+  app.setNextCount(0);
+  const low = app.state.nextCount;
+
+  app.setNextCount(999);
+  const high = app.state.nextCount;
+
+  app.setNextCount(12);
 
   return (
-    (button.disabled === true &&
-      textOf(nextRowOf(app, 0)).includes('次回の公開予定日を算出できません')) ||
-    `→ disabled=${button.disabled}`
+    (low === app.MIN_NEXT_COUNT &&
+      high === app.MAX_NEXT_COUNT &&
+      app.state.nextCount === 12 &&
+      app.el.nextBody.children.length === 12) ||
+    `→ ${low} / ${high} / ${app.state.nextCount}`
+  );
+});
+
+check('初期値は今日・21時・8件', () => {
+  const app = loadApp();
+
+  app.initNextTab();
+
+  return (
+    (app.state.nextStart === '2026-08-19' &&
+      app.state.nextTime === '21:00' &&
+      app.state.nextCount === 8 &&
+      app.el.nextBody.children.length === 8) ||
+    `→ ${app.state.nextStart} / ${app.state.nextTime} / ${app.state.nextCount}`
+  );
+});
+
+check('連載を選び直しても次回更新日タブは作り直さない', () => {
+  const app = setup();
+
+  app.state.nextStart = '2026-08-29';
+  app.state.nextTime = '21:00';
+  app.state.nextCount = 3;
+  app.renderNextTable();
+
+  app.setEpisodeCount(5);
+
+  return (
+    app.el.nextBody.children.length === 3 ||
+    `→ ${app.el.nextBody.children.length}件`
+  );
+});
+
+check('最終回の文言は記事下タブで選ぶ', () => {
+  const app = setup();
+
+  app.state.finalMessage = 'series';
+
+  return (
+    app.buildFinalEpisodeHtml() ===
+      '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
+    `→ ${app.buildFinalEpisodeHtml()}`
   );
 });
 
 check('3つのタブを切り替えられる', () => {
   const app = setup();
 
-  const shown = () => [
-    app.el.panelPrev.hidden,
-    app.el.panelBottom.hidden,
-    app.el.panelNext.hidden,
-  ].join(',');
+  const shown = () =>
+    [app.el.panelPrev.hidden, app.el.panelBottom.hidden, app.el.panelNext.hidden].join(',');
 
   app.switchTab('next');
   const onNext = shown();

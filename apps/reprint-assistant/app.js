@@ -71,8 +71,10 @@ const state = {
   parsedSheetRows: null,
   parsedSheetSource: null,
 
-  // 次回更新日タブ。更新時刻は第1回配信日時の時刻を初期値にする
+  // ③ 次回更新日タブ。連載の情報は使わず、この3つだけで作る
+  nextStart: '',
   nextTime: '',
+  nextCount: 0,
 
   // 最終回の文言。記事下タブと次回更新日タブで共通
   finalMessage: 'trial',
@@ -122,6 +124,11 @@ const el = {
   bottomBody: document.getElementById('bottom-body'),
   nextBody: document.getElementById('next-body'),
   nextTime: document.getElementById('next-time'),
+  nextStart: document.getElementById('next-start'),
+  nextCount: document.getElementById('next-count'),
+  nextCountMinus: document.getElementById('next-count-minus'),
+  nextCountPlus: document.getElementById('next-count-plus'),
+  nextCopyAll: document.getElementById('next-copy-all'),
   finalMessage: document.getElementById('final-message'),
 
   toast: document.getElementById('toast'),
@@ -165,7 +172,6 @@ el.sourceSelect.addEventListener('change', () => {
   buildRows();
   renderPrevTable();
   renderBottomTable();
-  renderNextTable();
 });
 
 // ---- 再掲連載回数 ----
@@ -234,18 +240,70 @@ el.tabButtons.forEach((button) => {
   });
 });
 
-// ---- 次回更新日 ----
+// ---- ③ 次回更新日 ----
+//
+// このタブは連載の情報を使わない。開始日・時刻・件数だけで作る
+
+el.nextStart.addEventListener('input', () => {
+  state.nextStart = el.nextStart.value;
+  renderNextTable();
+});
 
 el.nextTime.addEventListener('input', () => {
   state.nextTime = el.nextTime.value;
   renderNextTable();
 });
 
-// 最終回の文言は記事下タブでも使うので、両方を作り直す
+el.nextCount.addEventListener('input', () => {
+  const value = parseCountInput(el.nextCount.value);
+
+  if (!Number.isFinite(value) || value < MIN_NEXT_COUNT) return;
+
+  setNextCount(value);
+});
+
+el.nextCount.addEventListener('change', () => commitNextCount());
+el.nextCount.addEventListener('blur', () => commitNextCount());
+
+el.nextCount.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    setNextCount(state.nextCount + (event.key === 'ArrowUp' ? 1 : -1));
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    commitNextCount();
+  }
+});
+
+el.nextCountMinus.addEventListener('click', () => {
+  setNextCount(state.nextCount - 1);
+});
+
+el.nextCountPlus.addEventListener('click', () => {
+  setNextCount(state.nextCount + 1);
+});
+
+el.nextCopyAll.addEventListener('click', () => {
+  const text = buildNextUpdateHtmlAll();
+
+  if (!text) {
+    showToast('開始日と更新時刻を入力してください');
+    return;
+  }
+
+  copyText(text).then((ok) => {
+    showToast(
+      ok ? `${state.nextCount}件をコピーしました` : 'コピーできませんでした'
+    );
+  });
+});
+
 el.finalMessage.addEventListener('change', () => {
   state.finalMessage = el.finalMessage.value;
   renderBottomTable();
-  renderNextTable();
 });
 
 el.bulkApply.addEventListener('click', () => {
@@ -291,6 +349,7 @@ el.prevBody.addEventListener('input', (event) => {
     fetchReprintData();
   }
 })();
+
 
 // ------------------------------------------------------------
 // API取得
@@ -400,7 +459,6 @@ async function fetchReprintData() {
     buildRows();
     renderPrevTable();
     renderBottomTable();
-    renderNextTable();
 
     el.sectionTabs.hidden = false;
     switchTab(state.activeTab);
@@ -434,7 +492,6 @@ function resetView() {
   state.copiedStash.clear();
   state.rows = [];
   state.copyButtons = [];
-  state.nextCopyButtons = [];
 
   renderCountControl();
 
@@ -447,7 +504,6 @@ function resetView() {
   el.sourceSelect.textContent = '';
   el.prevBody.textContent = '';
   el.bottomBody.textContent = '';
-  el.nextBody.textContent = '';
   el.bulkStatus.textContent = '';
 }
 
@@ -503,9 +559,6 @@ function renderCommon() {
 
   renderSheetStatus();
 
-  // 更新時刻は連載ごとに違う。取得のたびに第1回配信日時の時刻へ戻す
-  state.nextTime = defaultNextTime();
-  el.nextTime.value = state.nextTime;
   el.finalMessage.value = state.finalMessage;
 
   el.sectionCommon.hidden = false;
@@ -669,7 +722,6 @@ function setEpisodeCount(value) {
     buildRows();
     renderPrevTable();
     renderBottomTable();
-    renderNextTable();
     renderSourceStatus();
   }
 
@@ -1692,80 +1744,70 @@ function buildNextArticleTemplateHtml() {
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
+// 開始日から1日ずつ進めて、指定件数ぶんの日付を作る。
+// 月またぎ・年またぎは Date の日付繰り上げに任せる
+function buildNextUpdateDates(start, count) {
+  if (!start || !count) return [];
+
+  const dates = [];
+
+  for (let index = 0; index < count; index++) {
+    dates.push(
+      new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+    );
+  }
+
+  return dates;
+}
+
 function renderNextTable() {
   el.nextBody.textContent = '';
   state.nextCopyButtons = [];
 
-  if (!state.rows.length) {
+  const start = parseDateInput(state.nextStart);
+  const time = parseTimeInput(state.nextTime);
+
+  if (!start || !time) {
     el.nextBody.appendChild(
-      createEmptyRow(4, '参照元連載を選択すると作業行を作成します')
+      createEmptyRow(
+        4,
+        !start ? '開始日を入力してください' : '更新時刻を入力してください'
+      )
     );
     return;
   }
 
-  const time = parseTimeInput(state.nextTime);
+  const dates = buildNextUpdateDates(start, state.nextCount);
 
-  state.rows.forEach((row, index) => {
+  if (!dates.length) {
+    el.nextBody.appendChild(createEmptyRow(4, '作る件数を入力してください'));
+    return;
+  }
+
+  dates.forEach((date, index) => {
+    const html = buildNextUpdateHtml(date, time);
+
     const tr = document.createElement('tr');
 
-    if (row.isFinal) tr.classList.add('is-final');
+    tr.appendChild(createCell(`${index + 1}件目`, 'col-ep ep-no'));
+    tr.appendChild(createCell(fmtYmdShort(date), 'col-date'));
 
-    const next = state.rows[index + 1];
-    const html = buildNextUpdateHtmlFor(row, next, time);
-
-    if (!html) tr.classList.add('is-flag');
-
-    tr.appendChild(createCell(row.label, 'col-ep ep-no'));
-    tr.appendChild(createPlannedCell(row));
-
-    // ---- 次回更新日 ----
     const cell = document.createElement('td');
-
-    if (row.isFinal) {
-      cell.appendChild(createLine('次回の更新はありません（最終回）', 'sub'));
-      cell.appendChild(createLine(FINAL_MESSAGES[state.finalMessage], 'final'));
-    } else if (!next || !next.planned) {
-      cell.appendChild(
-        createLine('次回の公開予定日を算出できません', 'warn')
-      );
-      cell.appendChild(createLine('第1回配信日時が未登録です', 'sub'));
-    } else if (!time) {
-      cell.appendChild(createLine('更新時刻を入力してください', 'warn'));
-    } else {
-      cell.appendChild(
-        createLine(fmtNextUpdate(next.planned, time), 'range')
-      );
-      cell.appendChild(
-        createLine(`${next.label}の公開予定日です`, 'sub faint')
-      );
-    }
-
+    cell.appendChild(createLine(fmtNextUpdate(date, time), 'range'));
     tr.appendChild(cell);
 
-    // ---- 操作 ----
     const actionCell = document.createElement('td');
     actionCell.className = 'col-act';
 
-    if (html) {
-      actionCell.appendChild(
-        createCopyButton(
-          'HTMLコピー',
-          () => html,
-          row.isFinal
-            ? '最終回の文言をコピーしました'
-            : '次回更新日HTMLをコピーしました',
-          'next-copy',
-          state.nextCopyButtons
-        )
-      );
-    } else {
-      actionCell.appendChild(
-        createDisabledButton(
-          'HTMLコピー',
-          !time ? '更新時刻を入力してください' : '次回の公開予定日がありません'
-        )
-      );
-    }
+    actionCell.appendChild(
+      createCopyButton(
+        'HTMLコピー',
+        () => html,
+        '次回更新日HTMLをコピーしました',
+        'next-copy',
+        state.nextCopyButtons
+      )
+    );
 
     tr.appendChild(actionCell);
 
@@ -1773,13 +1815,44 @@ function renderNextTable() {
   });
 }
 
-// 最終回は次の更新が無いので、代わりに最終回の文言を渡す
-function buildNextUpdateHtmlFor(row, next, time) {
-  if (row.isFinal) return buildFinalEpisodeHtml();
+function buildNextUpdateHtml(date, time) {
+  return `<p align="center">${fmtNextUpdate(date, time)}</p>`;
+}
 
-  if (!next || !next.planned || !time) return '';
+// 表計算に貼れるよう、全件を1行ずつ改行でつなぐ
+function buildNextUpdateHtmlAll() {
+  const start = parseDateInput(state.nextStart);
+  const time = parseTimeInput(state.nextTime);
 
-  return `<p align="center">${fmtNextUpdate(next.planned, time)}</p>`;
+  if (!start || !time) return '';
+
+  return buildNextUpdateDates(start, state.nextCount)
+    .map((date) => buildNextUpdateHtml(date, time))
+    .join('\n');
+}
+
+// 入力欄は type="date" なので "2026-08-29" の形で来る
+function parseDateInput(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) return null;
+
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+
+  const date = new Date(y, m - 1, d);
+
+  // 2026-02-31 のような日付は Date が繰り上げてしまうので弾く
+  if (date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+
+  return date;
+}
+
+function fmtDateInput(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate()
+  )}`;
 }
 
 // 次回更新は7月13日(月)、21時の予定です。
@@ -1796,6 +1869,43 @@ function fmtNextUpdate(date, time) {
   );
 }
 
+// 作る件数の範囲。連載回数と同じく、打ち間違いで数百行を作らないための歯止め
+const MIN_NEXT_COUNT = 1;
+const MAX_NEXT_COUNT = 200;
+
+function setNextCount(value) {
+  const next = Math.min(
+    Math.max(Math.floor(Number(value)) || MIN_NEXT_COUNT, MIN_NEXT_COUNT),
+    MAX_NEXT_COUNT
+  );
+
+  if (next !== state.nextCount) {
+    state.nextCount = next;
+    renderNextTable();
+  }
+
+  el.nextCount.value = String(state.nextCount);
+}
+
+function commitNextCount() {
+  const value = parseCountInput(el.nextCount.value);
+
+  setNextCount(Number.isFinite(value) ? value : state.nextCount);
+}
+
+// 初期値。連載を取得していなくても使えるよう、今日と21時から始める
+function initNextTab() {
+  state.nextStart = fmtDateInput(new Date());
+  state.nextTime = '21:00';
+  state.nextCount = 8;
+
+  el.nextStart.value = state.nextStart;
+  el.nextTime.value = state.nextTime;
+  el.nextCount.value = String(state.nextCount);
+
+  renderNextTable();
+}
+
 // 入力欄は type="time" なので "21:00" の形で来る。
 // 空欄や読めない値のときは null を返してコピーを止める
 function parseTimeInput(value) {
@@ -1809,15 +1919,6 @@ function parseTimeInput(value) {
   if (hh > 23 || mi > 59) return null;
 
   return { hh, mi };
-}
-
-// 第1回配信日時の時刻を初期値にする
-function defaultNextTime() {
-  const parts = getFirstDeliveryParts();
-
-  if (!parts) return '';
-
-  return `${pad2(parts.hh)}:${pad2(parts.mi)}`;
 }
 
 // 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く。
@@ -2315,3 +2416,16 @@ function showToast(message) {
     el.toast.classList.remove('show');
   }, 1600);
 }
+
+// ------------------------------------------------------------
+// 起動時の描画
+//
+// const の初期化より前に呼ぶと TDZ で落ちるため、
+// ファイルの末尾でまとめて呼ぶ
+// ------------------------------------------------------------
+
+// ③は連載を取得しなくても使えるので、最初から作っておく。
+// ①②は空の案内を出しておく
+initNextTab();
+renderPrevTable();
+renderBottomTable();
