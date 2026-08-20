@@ -114,6 +114,9 @@
       <button type="button" class="tab" id="tab-bottom"
               role="tab" aria-selected="false" aria-controls="panel-bottom"
               data-tab="bottom">② 記事下</button>
+      <button type="button" class="tab" id="tab-next"
+              role="tab" aria-selected="false" aria-controls="panel-next"
+              data-tab="next">③ 次回更新日</button>
     </div>
 
     <!-- ---- ① 前回記事 ---- -->
@@ -176,6 +179,51 @@
           </tr>
         </thead>
         <tbody id="bottom-body"></tbody>
+      </table>
+
+    </div>
+
+    <!-- ---- ③ 次回更新日 ---- -->
+    <div class="tabpanel" id="panel-next" role="tabpanel" aria-labelledby="tab-next" hidden>
+
+      <div class="next-settings">
+        <div class="next-field">
+          <label for="next-time">更新時刻</label>
+          <input id="next-time" type="time" step="60">
+          <span class="note">第1回配信日時の時刻を初期値にしています</span>
+        </div>
+
+        <div class="next-field">
+          <label for="final-message">最終回の文言</label>
+          <select id="final-message">
+            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
+            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
+          </select>
+          <span class="note">記事下タブの最終回でも同じ文言を使います</span>
+        </div>
+      </div>
+
+      <dl class="hint hint-defs">
+        <dt>次回更新日</dt>
+        <dd>その回の1つ後の回の公開予定日を使います（第1回 → 第2回の公開予定日）。月や年をまたいでも自動で切り替わります。</dd>
+
+        <dt>更新時刻</dt>
+        <dd>全回に同じ時刻を使います。分が0のときは「21時」、それ以外は「21時30分」と出します。</dd>
+
+        <dt>最終回</dt>
+        <dd>次の更新がないので、選んだ最終回の文言を出します。</dd>
+      </dl>
+
+      <table class="grid grid-next">
+        <thead>
+          <tr>
+            <th class="col-ep">回</th>
+            <th class="col-date">公開予定</th>
+            <th>次回更新日</th>
+            <th class="col-act">操作</th>
+          </tr>
+        </thead>
+        <tbody id="next-body"></tbody>
       </table>
 
     </div>
