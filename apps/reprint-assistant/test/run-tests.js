@@ -173,6 +173,8 @@ const APP_SOURCE =
   removeDroppedParagraphs, getListTarget, sheetBlockReason, buildNextArticleTemplateHtml,
   resolveNextLink, bottomCopyBlockReason, findSheetRowForRow,
   parsePeriodParts, assignRowYears, fmtPeriodRange,
+  renderNextTable, fmtNextUpdate, parseTimeInput, defaultNextTime, renderCommon,
+  buildNextUpdateHtmlFor, switchTab, FINAL_MESSAGES,
 };
 `;
 
@@ -313,9 +315,11 @@ function setup(options = {}) {
     state.episodeCount = options.episodeCount;
   }
 
+  app.renderCommon();
   app.buildRows();
   app.renderPrevTable();
   app.renderBottomTable();
+  app.renderNextTable();
 
   return app;
 }
@@ -1315,7 +1319,228 @@ check('C列が空の週はコピーを止める', () => {
 });
 
 // ============================================================
-// 9. 画面表示（今回の変更の回帰）
+// 9. 次回更新日タブ
+// ============================================================
+
+group('次回更新日');
+
+// 次回更新日タブの1行ぶんを取り出す
+function nextRowOf(app, index) {
+  return app.el.nextBody.children[index];
+}
+
+check('第N回は第N+1回の公開予定日を使う', () => {
+  const app = setup();
+
+  // 第1回 8/28（金）→ 第2回 8/29（土）
+  const text = textOf(nextRowOf(app, 0));
+
+  return (
+    text.includes('次回更新は8月29日(土)、19時の予定です。') || `→ ${text}`
+  );
+});
+
+check('更新時刻は第1回配信日時の時刻を初期値にする', () => {
+  const app = setup();
+
+  return (
+    (app.state.nextTime === '19:00' && app.el.nextTime.value === '19:00') ||
+    `→ ${app.state.nextTime}`
+  );
+});
+
+check('更新時刻を変えると全回に効く', () => {
+  const app = setup();
+
+  app.state.nextTime = '21:00';
+  app.renderNextTable();
+
+  const text = textOf(nextRowOf(app, 0));
+
+  return text.includes('21時の予定です。') || `→ ${text}`;
+});
+
+check('分が0でないときは「21時30分」と出す', () => {
+  const app = loadApp();
+
+  const date = new Date(2026, 6, 13);
+
+  return (
+    (app.fmtNextUpdate(date, { hh: 21, mi: 30 }) ===
+      '次回更新は7月13日(月)、21時30分の予定です。' &&
+      app.fmtNextUpdate(date, { hh: 21, mi: 0 }) ===
+        '次回更新は7月13日(月)、21時の予定です。') ||
+    `→ ${app.fmtNextUpdate(date, { hh: 21, mi: 30 })}`
+  );
+});
+
+check('月をまたぐと月表記が切り替わる', () => {
+  const app = loadApp();
+
+  // 2026/7/31（金）→ 2026/8/1（土）
+  return (
+    (app.fmtNextUpdate(new Date(2026, 6, 31), { hh: 21, mi: 0 }) ===
+      '次回更新は7月31日(金)、21時の予定です。' &&
+      app.fmtNextUpdate(new Date(2026, 7, 1), { hh: 21, mi: 0 }) ===
+        '次回更新は8月1日(土)、21時の予定です。') ||
+    `→ ${app.fmtNextUpdate(new Date(2026, 7, 1), { hh: 21, mi: 0 })}`
+  );
+});
+
+check('連載が月をまたいでも各回の次回更新日が正しい', () => {
+  // 第1回 2026/7/30 19:00 から5回。7/31 → 8/1 → 8/2 とまたぐ
+  const app = setup({
+    episodeCount: 5,
+    series: { ...SERIES, firstDeliveryAt: '2026-07-30T10:00:00Z' },
+  });
+
+  const got = [0, 1, 2, 3].map((index) => {
+    const text = textOf(nextRowOf(app, index));
+    const match = text.match(/次回更新は([^、]+)、/);
+    return match ? match[1] : '(なし)';
+  });
+
+  return (
+    got.join(' / ') === '7月31日(金) / 8月1日(土) / 8月2日(日) / 8月3日(月)' ||
+    `→ ${got.join(' / ')}`
+  );
+});
+
+check('年をまたいでも切り替わる', () => {
+  // 第1回 2026/12/30 19:00 から3回
+  const app = setup({
+    episodeCount: 3,
+    series: { ...SERIES, firstDeliveryAt: '2026-12-30T10:00:00Z' },
+  });
+
+  const got = [0, 1].map((index) => {
+    const text = textOf(nextRowOf(app, index));
+    const match = text.match(/次回更新は([^、]+)、/);
+    return match ? match[1] : '(なし)';
+  });
+
+  return got.join(' / ') === '12月31日(木) / 1月1日(金)' || `→ ${got.join(' / ')}`;
+});
+
+check('生成HTMLは <p align="center"> の1段落', () => {
+  const app = setup();
+
+  const html = app.buildNextUpdateHtmlFor(
+    app.state.rows[0],
+    app.state.rows[1],
+    { hh: 21, mi: 0 }
+  );
+
+  return (
+    html === '<p align="center">次回更新は8月29日(土)、21時の予定です。</p>' ||
+    `→ ${html}`
+  );
+});
+
+check('最終回は選んだ最終回の文言を出す', () => {
+  const app = setup();
+
+  const last = app.state.rows[app.state.rows.length - 1];
+  const trial = app.buildNextUpdateHtmlFor(last, undefined, { hh: 21, mi: 0 });
+
+  app.state.finalMessage = 'series';
+  const series = app.buildNextUpdateHtmlFor(last, undefined, { hh: 21, mi: 0 });
+
+  return (
+    (trial ===
+      '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>' &&
+      series ===
+        '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>') ||
+    `→ ${trial} / ${series}`
+  );
+});
+
+check('最終回の文言は記事下タブでも同じものを使う', () => {
+  const app = setup();
+
+  app.state.finalMessage = 'series';
+
+  return (
+    app.buildFinalEpisodeHtml() ===
+      '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
+    `→ ${app.buildFinalEpisodeHtml()}`
+  );
+});
+
+check('更新時刻が空ならコピーを止める', () => {
+  const app = setup();
+
+  app.state.nextTime = '';
+  app.renderNextTable();
+
+  const button = findNodes(
+    nextRowOf(app, 0),
+    (n) => n.tagName === 'BUTTON'
+  )[0];
+
+  return (
+    (button.disabled === true &&
+      textOf(nextRowOf(app, 0)).includes('更新時刻を入力してください')) ||
+    `→ disabled=${button.disabled}`
+  );
+});
+
+check('読めない時刻は受け付けない', () => {
+  const app = loadApp();
+
+  return (
+    (app.parseTimeInput('21:00') &&
+      app.parseTimeInput('9:05').mi === 5 &&
+      app.parseTimeInput('') === null &&
+      app.parseTimeInput('25:00') === null &&
+      app.parseTimeInput('21:70') === null &&
+      app.parseTimeInput('21時') === null) ||
+    '→ 時刻の判定が期待と違う'
+  );
+});
+
+check('第1回配信日時が無ければ次回更新日を出さない', () => {
+  const app = setup({ series: { ...SERIES, firstDeliveryAt: '' } });
+
+  const button = findNodes(
+    nextRowOf(app, 0),
+    (n) => n.tagName === 'BUTTON'
+  )[0];
+
+  return (
+    (button.disabled === true &&
+      textOf(nextRowOf(app, 0)).includes('次回の公開予定日を算出できません')) ||
+    `→ disabled=${button.disabled}`
+  );
+});
+
+check('3つのタブを切り替えられる', () => {
+  const app = setup();
+
+  const shown = () => [
+    app.el.panelPrev.hidden,
+    app.el.panelBottom.hidden,
+    app.el.panelNext.hidden,
+  ].join(',');
+
+  app.switchTab('next');
+  const onNext = shown();
+
+  app.switchTab('bottom');
+  const onBottom = shown();
+
+  app.switchTab('prev');
+
+  return (
+    (onNext === 'true,true,false' &&
+      onBottom === 'true,false,true' &&
+      shown() === 'false,true,true') ||
+    `→ ${onNext} / ${onBottom} / ${shown()}`
+  );
+});
+
+// ============================================================
+// 10. 画面表示（今回の変更の回帰）
 // ============================================================
 
 group('画面表示');

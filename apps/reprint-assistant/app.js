@@ -57,8 +57,10 @@ const state = {
   // { number, label, isFinal, planned, articleId, articleTitle, copiedHtml, el }
   rows: [],
 
-  // 記事下タブのコピーボタン。コピー済み表示を1件だけにするために持つ
+  // コピーボタン。コピー済み表示を1件だけにするために持つ。
+  // クリップボードは1つなので、タブをまたいで1件だけにする
   copyButtons: [],
+  nextCopyButtons: [],
 
   // スプレッドシート「毎月の記事下リンク」。rows は [B列, C列] の配列
   sheetRows: null,
@@ -68,6 +70,12 @@ const state = {
   // 年を推定済みの行。sheetRows が変わったときだけ作り直す
   parsedSheetRows: null,
   parsedSheetSource: null,
+
+  // 次回更新日タブ。更新時刻は第1回配信日時の時刻を初期値にする
+  nextTime: '',
+
+  // 最終回の文言。記事下タブと次回更新日タブで共通
+  finalMessage: 'trial',
 
   activeTab: 'prev',
 };
@@ -103,6 +111,7 @@ const el = {
   tabButtons: Array.from(document.querySelectorAll('.tab')),
   panelPrev: document.getElementById('panel-prev'),
   panelBottom: document.getElementById('panel-bottom'),
+  panelNext: document.getElementById('panel-next'),
 
   bulkInput: document.getElementById('bulk-input'),
   bulkApply: document.getElementById('bulk-apply'),
@@ -111,6 +120,9 @@ const el = {
 
   prevBody: document.getElementById('prev-body'),
   bottomBody: document.getElementById('bottom-body'),
+  nextBody: document.getElementById('next-body'),
+  nextTime: document.getElementById('next-time'),
+  finalMessage: document.getElementById('final-message'),
 
   toast: document.getElementById('toast'),
 };
@@ -153,6 +165,7 @@ el.sourceSelect.addEventListener('change', () => {
   buildRows();
   renderPrevTable();
   renderBottomTable();
+  renderNextTable();
 });
 
 // ---- 再掲連載回数 ----
@@ -211,7 +224,7 @@ el.tabButtons.forEach((button) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
 
     event.preventDefault();
-    switchTab(state.activeTab === 'prev' ? 'bottom' : 'prev');
+    stepTab(event.key === 'ArrowRight' ? 1 : -1);
 
     const next = el.tabButtons.find(
       (tab) => tab.dataset.tab === state.activeTab
@@ -219,6 +232,20 @@ el.tabButtons.forEach((button) => {
 
     if (next) next.focus();
   });
+});
+
+// ---- 次回更新日 ----
+
+el.nextTime.addEventListener('input', () => {
+  state.nextTime = el.nextTime.value;
+  renderNextTable();
+});
+
+// 最終回の文言は記事下タブでも使うので、両方を作り直す
+el.finalMessage.addEventListener('change', () => {
+  state.finalMessage = el.finalMessage.value;
+  renderBottomTable();
+  renderNextTable();
 });
 
 el.bulkApply.addEventListener('click', () => {
@@ -373,6 +400,7 @@ async function fetchReprintData() {
     buildRows();
     renderPrevTable();
     renderBottomTable();
+    renderNextTable();
 
     el.sectionTabs.hidden = false;
     switchTab(state.activeTab);
@@ -406,6 +434,7 @@ function resetView() {
   state.copiedStash.clear();
   state.rows = [];
   state.copyButtons = [];
+  state.nextCopyButtons = [];
 
   renderCountControl();
 
@@ -418,6 +447,7 @@ function resetView() {
   el.sourceSelect.textContent = '';
   el.prevBody.textContent = '';
   el.bottomBody.textContent = '';
+  el.nextBody.textContent = '';
   el.bulkStatus.textContent = '';
 }
 
@@ -472,6 +502,11 @@ function renderCommon() {
   }
 
   renderSheetStatus();
+
+  // 更新時刻は連載ごとに違う。取得のたびに第1回配信日時の時刻へ戻す
+  state.nextTime = defaultNextTime();
+  el.nextTime.value = state.nextTime;
+  el.finalMessage.value = state.finalMessage;
 
   el.sectionCommon.hidden = false;
 }
@@ -634,6 +669,7 @@ function setEpisodeCount(value) {
     buildRows();
     renderPrevTable();
     renderBottomTable();
+    renderNextTable();
     renderSourceStatus();
   }
 
@@ -861,8 +897,10 @@ function fmtYmdShort(date) {
 // タブ
 // ------------------------------------------------------------
 
+const TAB_NAMES = ['prev', 'bottom', 'next'];
+
 function switchTab(name) {
-  state.activeTab = name === 'bottom' ? 'bottom' : 'prev';
+  state.activeTab = TAB_NAMES.includes(name) ? name : 'prev';
 
   el.tabButtons.forEach((button) => {
     const isActive = button.dataset.tab === state.activeTab;
@@ -873,6 +911,15 @@ function switchTab(name) {
 
   el.panelPrev.hidden = state.activeTab !== 'prev';
   el.panelBottom.hidden = state.activeTab !== 'bottom';
+  el.panelNext.hidden = state.activeTab !== 'next';
+}
+
+// 左右キーでの移動。タブが増えても端で止まらず回るようにする
+function stepTab(direction) {
+  const current = TAB_NAMES.indexOf(state.activeTab);
+  const next = (current + direction + TAB_NAMES.length) % TAB_NAMES.length;
+
+  switchTab(TAB_NAMES[next]);
 }
 
 // ============================================================
@@ -1635,6 +1682,144 @@ function buildNextArticleTemplateHtml() {
   return buildNextArticleHtml(NEXT_LINK_PLACEHOLDER, PREV_TITLE_FALLBACK);
 }
 
+// ============================================================
+// ③ 次回更新日
+//
+// その回の1つ後の回の公開予定日を「次回更新」として出す。
+// 公開予定日は第1回配信日時から1日ずつ足した Date なので、
+// 月またぎ・年またぎは Date 側で解決される。
+// ============================================================
+
+const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
+function renderNextTable() {
+  el.nextBody.textContent = '';
+  state.nextCopyButtons = [];
+
+  if (!state.rows.length) {
+    el.nextBody.appendChild(
+      createEmptyRow(4, '参照元連載を選択すると作業行を作成します')
+    );
+    return;
+  }
+
+  const time = parseTimeInput(state.nextTime);
+
+  state.rows.forEach((row, index) => {
+    const tr = document.createElement('tr');
+
+    if (row.isFinal) tr.classList.add('is-final');
+
+    const next = state.rows[index + 1];
+    const html = buildNextUpdateHtmlFor(row, next, time);
+
+    if (!html) tr.classList.add('is-flag');
+
+    tr.appendChild(createCell(row.label, 'col-ep ep-no'));
+    tr.appendChild(createPlannedCell(row));
+
+    // ---- 次回更新日 ----
+    const cell = document.createElement('td');
+
+    if (row.isFinal) {
+      cell.appendChild(createLine('次回の更新はありません（最終回）', 'sub'));
+      cell.appendChild(createLine(FINAL_MESSAGES[state.finalMessage], 'final'));
+    } else if (!next || !next.planned) {
+      cell.appendChild(
+        createLine('次回の公開予定日を算出できません', 'warn')
+      );
+      cell.appendChild(createLine('第1回配信日時が未登録です', 'sub'));
+    } else if (!time) {
+      cell.appendChild(createLine('更新時刻を入力してください', 'warn'));
+    } else {
+      cell.appendChild(
+        createLine(fmtNextUpdate(next.planned, time), 'range')
+      );
+      cell.appendChild(
+        createLine(`${next.label}の公開予定日です`, 'sub faint')
+      );
+    }
+
+    tr.appendChild(cell);
+
+    // ---- 操作 ----
+    const actionCell = document.createElement('td');
+    actionCell.className = 'col-act';
+
+    if (html) {
+      actionCell.appendChild(
+        createCopyButton(
+          'HTMLコピー',
+          () => html,
+          row.isFinal
+            ? '最終回の文言をコピーしました'
+            : '次回更新日HTMLをコピーしました',
+          'next-copy',
+          state.nextCopyButtons
+        )
+      );
+    } else {
+      actionCell.appendChild(
+        createDisabledButton(
+          'HTMLコピー',
+          !time ? '更新時刻を入力してください' : '次回の公開予定日がありません'
+        )
+      );
+    }
+
+    tr.appendChild(actionCell);
+
+    el.nextBody.appendChild(tr);
+  });
+}
+
+// 最終回は次の更新が無いので、代わりに最終回の文言を渡す
+function buildNextUpdateHtmlFor(row, next, time) {
+  if (row.isFinal) return buildFinalEpisodeHtml();
+
+  if (!next || !next.planned || !time) return '';
+
+  return `<p align="center">${fmtNextUpdate(next.planned, time)}</p>`;
+}
+
+// 次回更新は7月13日(月)、21時の予定です。
+//
+// 月日はゼロ詰めしない。曜日の括弧は半角。
+// 分が0のときは「21時」、それ以外は「21時30分」にする
+function fmtNextUpdate(date, time) {
+  const weekday = WEEKDAY_LABELS[date.getDay()];
+  const clock = time.mi ? `${time.hh}時${time.mi}分` : `${time.hh}時`;
+
+  return (
+    `次回更新は${date.getMonth() + 1}月${date.getDate()}日(${weekday})、` +
+    `${clock}の予定です。`
+  );
+}
+
+// 入力欄は type="time" なので "21:00" の形で来る。
+// 空欄や読めない値のときは null を返してコピーを止める
+function parseTimeInput(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match) return null;
+
+  const hh = Number(match[1]);
+  const mi = Number(match[2]);
+
+  if (hh > 23 || mi > 59) return null;
+
+  return { hh, mi };
+}
+
+// 第1回配信日時の時刻を初期値にする
+function defaultNextTime() {
+  const parts = getFirstDeliveryParts();
+
+  if (!parts) return '';
+
+  return `${pad2(parts.hh)}:${pad2(parts.mi)}`;
+}
+
 // 最終回の記事下は「続きを読む」の代わりにこの固定文言を置く。
 //
 // 公開済みの再掲（gr1896・gr1528）は
@@ -1644,12 +1829,15 @@ function buildNextArticleTemplateHtml() {
 //
 // 直後の余白 <p>　</p> はスプレッドシートC列の先頭に入っているため、
 // ここでは出さない（出すと余白が二重になる）
+const FINAL_MESSAGES = {
+  trial: '試し読み連載は今回で最終回です。ご愛読ありがとうございました。',
+  series: '本連載は今回で最終回です。ご愛読ありがとうございました。',
+};
+
 function buildFinalEpisodeHtml() {
-  return (
-    '<p align="center">' +
-    '試し読み連載は今回で最終回です。ご愛読ありがとうございました。' +
-    '</p>'
-  );
+  const text = FINAL_MESSAGES[state.finalMessage] || FINAL_MESSAGES.trial;
+
+  return `<p align="center">${text}</p>`;
 }
 
 // C列は「連載記事一覧 → 【イチオシ記事】 →【注目記事】→（定型文）」の並び。
@@ -2017,7 +2205,7 @@ function createEmptyRow(colspan, text) {
 
 // コピー内容は押した時点で組み立てる。
 // 記事IDは画面で書き換わるため、描画時のテキストを持たせない。
-function createCopyButton(label, getText, toastMessage, modifier) {
+function createCopyButton(label, getText, toastMessage, modifier, registry) {
   const button = document.createElement('button');
 
   button.type = 'button';
@@ -2047,7 +2235,7 @@ function createCopyButton(label, getText, toastMessage, modifier) {
     });
   });
 
-  state.copyButtons.push(button);
+  (registry || state.copyButtons).push(button);
 
   return button;
 }
@@ -2055,7 +2243,9 @@ function createCopyButton(label, getText, toastMessage, modifier) {
 // コピー済みの表示は最後にコピーした1件だけにする。
 // 「作業が済んだ回」ではなく「いまクリップボードに入っているもの」を示す
 function markCopiedButton(button) {
-  for (const other of state.copyButtons) {
+  const all = [...state.copyButtons, ...state.nextCopyButtons];
+
+  for (const other of all) {
     if (other === button) continue;
 
     other.classList.remove('copied');

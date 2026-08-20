@@ -215,6 +215,57 @@ a:focus-visible {
   .hint-defs dt:first-child { margin-top: 0; }
 }
 
+/* ---- 次回更新日タブの設定行 ---- */
+
+.next-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-bottom: 16px;
+}
+
+.next-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.next-field label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+#next-time {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+#next-time:focus { border-color: var(--accent); }
+
+#final-message {
+  min-width: 380px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#final-message:focus { border-color: var(--accent); }
+
 .note { font-size: 11.5px; color: var(--faint); }
 .note.warn { color: var(--warn); font-weight: 600; }
 
@@ -588,6 +639,11 @@ a:focus-visible {
 .grid .col-act { width: 152px; }
 
 .grid-bottom .col-act { width: 168px; }
+
+/* 次回更新日タブ。列が少ないので日付側に幅を寄せる */
+.grid-next .col-ep { width: 74px; }
+.grid-next .col-date { width: 100px; }
+.grid-next .col-act { width: 132px; }
 .grid-bottom .col-next { width: 34%; }
 
 /* 前回記事タブ。20回ぶん並べても横スクロールが出ないよう、
@@ -788,6 +844,12 @@ button.copy.prev-copy {
 
 /* 一覧を見ただけでコピー済みの回が分かるようにする */
 button.copy.prev-copy.copied { font-weight: 700; }
+
+/* 「HTMLコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.next-copy {
+  min-width: 106px;
+  white-space: nowrap;
+}
 
 /* 「記事下まとめてコピー」と「コピー済み ✓」で幅が変わらないようにする */
 button.copy.strong {
