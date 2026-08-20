@@ -174,7 +174,7 @@ const APP_SOURCE =
   resolveNextLink, bottomCopyBlockReason, findSheetRowForRow,
   parsePeriodParts, assignRowYears, fmtPeriodRange,
   renderNextTable, fmtNextUpdate, parseTimeInput, parseDateInput, renderCommon,
-  buildNextUpdateHtml, buildNextUpdateHtmlAll, buildNextUpdateDates,
+  buildNextUpdateHtml, buildNextUpdateHtmlAll, buildNextUpdateDates, buildFinalMessageHtml,
   setNextCount, initNextTab, fmtDateInput, switchTab, FINAL_MESSAGES,
   MIN_NEXT_COUNT, MAX_NEXT_COUNT,
 };
@@ -1339,25 +1339,33 @@ function setupNext(options = {}) {
   return app;
 }
 
+// 次回更新日の行だけ。最後の「最終回」行は含めない
 function nextRowsOf(app) {
-  return app.el.nextBody.children.map((tr) =>
-    tr.children.map((td) => textOf(td).replace(/\s+/g, ' ').trim())
-  );
+  return app.el.nextBody.children
+    .slice(0, -1)
+    .map((tr) => tr.children.map((td) => textOf(td).replace(/\s+/g, ' ').trim()));
+}
+
+function finalRowOf(app) {
+  const rows = app.el.nextBody.children;
+  return rows[rows.length - 1].children.map((td) => textOf(td).trim());
 }
 
 check('連載を読み込まなくても作れる', () => {
   const app = setupNext();
 
+  // 次回更新日8件＋最終回1件
   return (
-    (app.state.series === null && app.el.nextBody.children.length === 8) ||
+    (app.state.series === null && app.el.nextBody.children.length === 9) ||
     `→ ${app.el.nextBody.children.length}件`
   );
 });
 
 check('指定した件数ぶん作る', () => {
+  // それぞれ最終回の1件が足される
   const got = [1, 5, 30].map((count) => setupNext({ count }).el.nextBody.children.length);
 
-  return got.join(',') === '1,5,30' || `→ ${got.join(',')}`;
+  return got.join(',') === '2,6,31' || `→ ${got.join(',')}`;
 });
 
 check('開始日から1日ずつ進める', () => {
@@ -1442,10 +1450,12 @@ check('生成HTMLは <p align="center"> の1段落', () => {
 check('全件まとめてコピーは1行ずつ改行でつなぐ', () => {
   const app = setupNext({ start: '2026-07-31', count: 2 });
 
+  // 画面の並びと同じく、最後に最終回の文言が付く
   return (
     app.buildNextUpdateHtmlAll() ===
       '<p align="center">次回更新は7月31日(金)、21時の予定です。</p>\n' +
-        '<p align="center">次回更新は8月1日(土)、21時の予定です。</p>' ||
+        '<p align="center">次回更新は8月1日(土)、21時の予定です。</p>\n' +
+        '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
     `→ ${app.buildNextUpdateHtmlAll()}`
   );
 });
@@ -1511,7 +1521,7 @@ check('件数は1〜200に丸める', () => {
     (low === app.MIN_NEXT_COUNT &&
       high === app.MAX_NEXT_COUNT &&
       app.state.nextCount === 12 &&
-      app.el.nextBody.children.length === 12) ||
+      app.el.nextBody.children.length === 13) ||
     `→ ${low} / ${high} / ${app.state.nextCount}`
   );
 });
@@ -1525,7 +1535,7 @@ check('初期値は今日・21時・8件', () => {
     (app.state.nextStart === '2026-08-19' &&
       app.state.nextTime === '21:00' &&
       app.state.nextCount === 8 &&
-      app.el.nextBody.children.length === 8) ||
+      app.el.nextBody.children.length === 9) ||
     `→ ${app.state.nextStart} / ${app.state.nextTime} / ${app.state.nextCount}`
   );
 });
@@ -1541,20 +1551,59 @@ check('連載を選び直しても次回更新日タブは作り直さない', (
   app.setEpisodeCount(5);
 
   return (
-    app.el.nextBody.children.length === 3 ||
+    app.el.nextBody.children.length === 4 ||
     `→ ${app.el.nextBody.children.length}件`
   );
 });
 
-check('最終回の文言は記事下タブで選ぶ', () => {
+check('最終回の行を件数の後ろに1つ足す', () => {
+  const app = setupNext({ count: 3 });
+
+  return (
+    finalRowOf(app).join(' | ') ===
+      '最終回 | — | 試し読み連載は今回で最終回です。ご愛読ありがとうございました。 | HTMLコピー' ||
+    `→ ${finalRowOf(app).join(' | ')}`
+  );
+});
+
+check('最終回の文言を選び替えられる', () => {
+  const app = setupNext();
+
+  app.state.finalMessage = 'series';
+  app.renderNextTable();
+
+  return (
+    (finalRowOf(app)[2] === '本連載は今回で最終回です。ご愛読ありがとうございました。' &&
+      app.buildFinalMessageHtml() ===
+        '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>') ||
+    `→ ${finalRowOf(app)[2]}`
+  );
+});
+
+check('②記事下タブの最終回は試し読み連載で固定', () => {
   const app = setup();
 
+  // ③で本連載を選んでも、②は変わらない
   app.state.finalMessage = 'series';
 
   return (
     app.buildFinalEpisodeHtml() ===
-      '<p align="center">本連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
+      '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>' ||
     `→ ${app.buildFinalEpisodeHtml()}`
+  );
+});
+
+check('②記事下タブの最終回に文言を表示しない', () => {
+  const app = setup();
+
+  const rows = app.el.bottomBody.children;
+  const cell = findNodes(rows[rows.length - 1], (n) =>
+    n.className.includes('col-next')
+  )[0];
+
+  return (
+    (!textOf(cell).includes('最終回です') && textOf(cell).trim() === '—') ||
+    `→ ${textOf(cell)}`
   );
 });
 

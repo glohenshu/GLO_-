@@ -90,15 +90,6 @@
           <span id="count-source" class="note"></span>
           <button type="button" id="count-reset" class="copy mini">参照元の回数に戻す</button>
         </div>
-
-        <!-- 記事下タブの最終回で使う。表の上に置くと選択・コピーの邪魔になるのでここに置く -->
-        <div class="final-row">
-          <label for="final-message">最終回の文言</label>
-          <select id="final-message">
-            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
-            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
-          </select>
-        </div>
       </div>
 
       <div class="common-zone common-zone-foot">
@@ -224,6 +215,14 @@
           </div>
         </div>
 
+        <div class="next-field">
+          <label for="final-message">最終回の文言</label>
+          <select id="final-message">
+            <option value="trial">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</option>
+            <option value="series">本連載は今回で最終回です。ご愛読ありがとうございました。</option>
+          </select>
+        </div>
+
         <button type="button" id="next-copy-all" class="copy mini">全件まとめてコピー</button>
       </div>
 
@@ -236,6 +235,9 @@
 
         <dt>更新時刻</dt>
         <dd>全件に同じ時刻を使います。分が0のときは「21時」、それ以外は「21時30分」と出します。</dd>
+
+        <dt>最終回</dt>
+        <dd>指定した件数の後ろに「最終回」の行が1つ増えます。文言は上の選択で切り替えます。</dd>
 
         <dt>連載との関係</dt>
         <dd>このタブは連載の情報を使いません。カテゴリコードを取得していなくても作れます。</dd>

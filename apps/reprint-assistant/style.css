@@ -252,23 +252,6 @@ a:focus-visible {
 
 #next-time:focus { border-color: var(--accent); }
 
-/* 最終回の文言。参照元・回数と同じ操作帯に置く */
-.final-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 9px;
-}
-
-.final-row label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .12em;
-  color: var(--faint);
-  white-space: nowrap;
-}
-
 #final-message {
   min-width: 380px;
   max-width: 100%;
