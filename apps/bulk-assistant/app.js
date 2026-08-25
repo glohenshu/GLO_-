@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.1.2
+   新規一括集中アシスタント Ver.1.3
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -1863,7 +1863,7 @@ function updateBottomRow(index) {
 
   // 記事下リンクの週は回ごとに違う。外部配信日で突き合わせる
   const hit = findSheetRowForRow(row);
-  const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
+  const bottomHtml = hit ? buildArticleBottomHtml(hit.html, row.isFinal) : '';
 
   const reason = bottomCopyBlockReason(link, row, hit, bottomHtml);
 
@@ -1892,7 +1892,7 @@ function updateBottomRow(index) {
       ? createDisabledButton('記事下まとめてコピー', reason)
       : createCopyButton(
           '記事下まとめてコピー',
-          () => joinBottomHtml(link.html, bottomHtml),
+          () => joinBottomHtml(link.html, bottomHtml, row.isFinal),
           '記事下HTMLをコピーしました',
           'strong'
         )
@@ -2400,16 +2400,27 @@ function buildFinalEpisodeHtml() {
 }
 
 // スプレッドシートC列は先頭に余白の段落 <p>　</p> が入っている。
-// そのまま後ろにつなぐと「続きを読む」の下に余白が来てしまうので、
-// 余白は先頭へ回して、続きを読むの上に空きを作る。
+// 余白をどちらへ置くかは回によって逆になる。
+//
+// 通常回：余白を先頭へ回して、続きを読むの上に空きを作る
 //
 //   <p>　</p>
 //   <p>▶この話の続きを読む…</p>
 //   <p>…連載記事一覧…</p>
+//
+// 一番最後の回：文言は記事のすぐ下に置き、そのあとに空きを入れる。
+// 余白は動かさずにそのままつなぐ
+//
+//   <p align="center">試し読み連載は今回で最終回です。…</p>
+//   <p>　</p>
+//   <p>…連載記事一覧…</p>
 const LEADING_SPACER_RE = /^\s*<p(?:\s[^>]*)?>(?:\s|　|&nbsp;)*<\/p>\s*/i;
 
-function joinBottomHtml(headHtml, bottomHtml) {
+function joinBottomHtml(headHtml, bottomHtml, isFinal = false) {
   const body = String(bottomHtml || '');
+
+  if (isFinal) return `${headHtml}\n${body}`;
+
   const match = body.match(LEADING_SPACER_RE);
 
   if (!match) return `${headHtml}\n${body}`;
@@ -2421,8 +2432,12 @@ function joinBottomHtml(headHtml, bottomHtml) {
 // 古い行には【人気記事】も入っている。いずれも1つの <p>…</p> に収まっているので、
 // 落とすときはその段落だけを丸ごと消す。
 //
-// 一括集中では【注目記事】【人気記事】とも**全回落とす**。残すのは【イチオシ記事】。
-// （再掲連載アシスタントは最終回だけ【注目記事】を残すが、こちらは残さない）
+// 落とすものは回によって違う。
+//
+//   通常回        ：【注目記事】【人気記事】を落とす（残すのは【イチオシ記事】）
+//   一番最後の回  ：【人気記事】だけ落とす（**ここだけ【注目記事】が要る**）
+//
+// このためラベルごとに正規表現を分けている。
 //
 // 判定は必ず【注目記事】【人気記事】という記事ラベルで行う。
 // 「注目」「人気」だけで判定すると、書籍タイトルの
@@ -2439,10 +2454,15 @@ const DROP_ATTENTION_RE =
 const DROP_POPULAR_RE =
   /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【人気記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
 
-function removeDroppedParagraphs(html) {
-  return String(html || '')
-    .replace(DROP_ATTENTION_RE, '')
-    .replace(DROP_POPULAR_RE, '');
+// 全回まとめて注目記事を落としてから最後の回を判定する、という順序にはしない。
+// 先に落としてしまうと最後の回で復元できないため、必ず isFinal で分岐させる
+function removeDroppedParagraphs(html, isFinal) {
+  const source = String(html || '');
+
+  // 一番最後の回は【注目記事】を残す。落とすのは【人気記事】だけ
+  if (isFinal) return source.replace(DROP_POPULAR_RE, '');
+
+  return source.replace(DROP_ATTENTION_RE, '').replace(DROP_POPULAR_RE, '');
 }
 
 // 「連載記事一覧はこちら」の誘導先。
@@ -2476,10 +2496,10 @@ function stripPickupSuffix(value) {
 }
 
 // スプレッドシートC列HTMLのプレースホルダーを今回の連載に置き換える
-function buildArticleBottomHtml(cHtml) {
+function buildArticleBottomHtml(cHtml, isFinal) {
   // 置換より先に落とす。
   // 書籍タイトルを入れてから消すと、タイトル次第で判定が変わりうる
-  let c = removeDroppedParagraphs(String(cHtml || '').trim()).trim();
+  let c = removeDroppedParagraphs(String(cHtml || '').trim(), isFinal).trim();
 
   if (!c) return '';
 

@@ -1365,10 +1365,10 @@ check('タイトルに記号が残っていたら要確認を出す（自動で�
 
 group('② 記事下');
 
-check('【注目記事】【人気記事】は全回落とす', () => {
+check('通常回は【注目記事】【人気記事】を落とす', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
 
   return (
     (!html.includes('【注目記事】') &&
@@ -1378,25 +1378,88 @@ check('【注目記事】【人気記事】は全回落とす', () => {
   );
 });
 
-check('一番最後の回でも【注目記事】は残さない', () => {
+check('一番最後の回は【注目記事】を残し【人気記事】だけ落とす', () => {
   const app = setup({ episodeCount: 3 });
 
-  typeInto(app, 1, { id: '30002' });
-  app.renderBottomTable();
-
-  const last = app.state.rows[2];
-  const hit = app.findSheetRowForRow(last);
-  const html = app.joinBottomHtml(
-    app.resolveNextLink(last).html,
-    app.buildArticleBottomHtml(hit.html)
-  );
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), true);
 
   return (
-    (last.isFinal === true &&
-      !html.includes('【注目記事】') &&
+    (html.includes('【注目記事】') &&
       !html.includes('【人気記事】') &&
       html.includes('【イチオシ記事】')) ||
     `→ ${html}`
+  );
+});
+
+// 一番最後の回のまとめてコピー。実際に画面が作るのと同じ経路で組み立てる
+function finalHtmlOf(app) {
+  const last = app.state.rows[app.state.rows.length - 1];
+  const hit = app.findSheetRowForRow(last);
+
+  return app.joinBottomHtml(
+    app.resolveNextLink(last).html,
+    app.buildArticleBottomHtml(hit.html, last.isFinal),
+    last.isFinal
+  );
+}
+
+check('一番最後の回は 文言 → 余白 → 一覧 の順にする', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const html = finalHtmlOf(app);
+
+  // C列の改行の入り方はシート次第なので、間の空白行は問わない
+  const expected = new RegExp(
+    `^<p align="center">${app.FINAL_MESSAGE}</p>\\s*<p>　</p>\\s*<p>`
+  );
+
+  return expected.test(html) || `→ ${JSON.stringify(html.slice(0, 90))}`;
+});
+
+check('一番最後の回のまとめてコピーが指定の並びになる', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const html = finalHtmlOf(app);
+
+  const order = [
+    '試し読み連載は今回で最終回です',
+    '<p>　</p>',
+    '/category/gr1974',
+    '【イチオシ記事】',
+    '【注目記事】',
+    '<p>　</p>',
+    'ゴールドライフオンライン（GLO）は、表現者を応援する',
+  ];
+
+  let at = -1;
+
+  for (const part of order) {
+    const found = html.indexOf(part, at + 1);
+
+    if (found <= at) return `→ 並びが違います：${part}`;
+
+    at = found;
+  }
+
+  return !html.includes('【人気記事】') || '→ 人気記事が残っています';
+});
+
+check('通常回は余白を先頭へ回す（最後の回とは逆）', () => {
+  const app = setup({ episodeCount: 3 });
+
+  typeInto(app, 1, { id: '30002' });
+
+  const first = app.state.rows[0];
+  const hit = app.findSheetRowForRow(first);
+  const html = app.joinBottomHtml(
+    app.resolveNextLink(first).html,
+    app.buildArticleBottomHtml(hit.html, first.isFinal),
+    first.isFinal
+  );
+
+  return (
+    html.startsWith('<p>　</p>\n<p>▶この話の続きを読む') ||
+    `→ ${html.slice(0, 60)}`
   );
 });
 
