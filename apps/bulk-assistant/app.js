@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.4
+   新規一括集中アシスタント Ver.0.5
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -13,7 +13,7 @@
 const API_ENDPOINT = '/api/bulk-data';
 
 // 作る回数の範囲。
-// 1回だけ（最終回のみ）もありうるので下限は1。
+// 1回だけの連載もありうるので下限は1。
 // 上限は打ち間違いで数百行を作ってしまわないための歯止め
 const MIN_EPISODE_COUNT = 1;
 const MAX_EPISODE_COUNT = 200;
@@ -53,12 +53,15 @@ const state = {
   parsedSheetSource: null,
 
   // 公開グループ。1本の連載を何回かに分けて一括公開することがあるため、
-  // 「この回から」で区切って日付と方式を持たせる。
+  // 「この回から」で区切って日付・方式・時刻を持たせる。
   //
-  //   { startNumber, date, mode: 'bulk' | 'daily', gloTime, extTime }
+  //   { startNumber, date, mode: 'bulk' | 'daily', time }
   //
   //   bulk （一括）… GLO公開は date のまま1分ずつ／外部配信は1日ずつ
   //   daily（毎日）… GLO公開も外部配信も1日ずつ。日時は同じになる
+  //
+  // 時刻はGLO公開・外部配信で共通。グループを分けたときに
+  // 21:00 → 14:00 のように変わる（例：管理シートの第11回以降）
   pubGroups: [],
 
   // ②のコピーボタン。コピー済み表示を1件だけにするために持つ
@@ -568,9 +571,11 @@ function buildRows() {
     const number = index + 1;
     const isFinal = index === total - 1;
 
+    // 一括集中では「最終回」という呼び方をしない。全回とも第N回で通す。
+    // ただし一番最後の回だけは、続きのリンクの代わりに文言を入れる
     state.rows.push({
       number,
-      label: isFinal ? '最終回' : `第${number}回`,
+      label: `第${number}回`,
       isFinal,
 
       articleId: state.idStash.get(number) || '',
@@ -627,11 +632,7 @@ function buildRowDates() {
     const to = next ? next.startNumber - 1 : state.rows.length;
 
     const base = parseDateInput(group.date);
-    const gloTime = parseTimeInput(group.gloTime);
-
-    // 毎日連載は公開日時と外部配信日時が同じになる
-    const extTime =
-      group.mode === 'daily' ? gloTime : parseTimeInput(group.extTime);
+    const time = parseTimeInput(group.time);
 
     for (let number = from; number <= Math.min(to, state.rows.length); number++) {
       const row = state.rows[number - 1];
@@ -640,34 +641,36 @@ function buildRowDates() {
 
       row.groupIndex = groupIndex;
 
-      if (!base || !gloTime || !extTime) continue;
+      if (!base || !time) continue;
 
       // グループの中での位置。区切るたびに0へ戻る
       const offset = number - from;
 
+      // 一括は日付を止めて分をずらす。毎日は日付を進めて分はずらさない
       row.gloAt =
         group.mode === 'daily'
           ? new Date(
               base.getFullYear(),
               base.getMonth(),
               base.getDate() + offset,
-              gloTime.hh,
-              gloTime.mi
+              time.hh,
+              time.mi
             )
           : new Date(
               base.getFullYear(),
               base.getMonth(),
               base.getDate(),
-              gloTime.hh,
-              gloTime.mi + offset
+              time.hh,
+              time.mi + offset
             );
 
+      // 外部配信はどちらの方式でも1日ずつ。時刻はずらさない
       row.extAt = new Date(
         base.getFullYear(),
         base.getMonth(),
         base.getDate() + offset,
-        extTime.hh,
-        extTime.mi
+        time.hh,
+        time.mi
       );
     }
   });
@@ -743,8 +746,7 @@ function normalizePubGroups() {
       startNumber: clampEpisodeCount(group.startNumber, MIN_EPISODE_COUNT),
       date: String(group.date || ''),
       mode: group.mode === 'daily' ? 'daily' : 'bulk',
-      gloTime: String(group.gloTime || ''),
-      extTime: String(group.extTime || ''),
+      time: String(group.time || ''),
     }))
     .sort((a, b) => a.startNumber - b.startNumber);
 
@@ -819,28 +821,8 @@ function renderPubGroups() {
     modeCell.appendChild(select);
     tr.appendChild(modeCell);
 
-    // GLO公開時刻
-    tr.appendChild(
-      createGroupInput('gloTime', 'time', group.gloTime, index, 'GLO公開時刻')
-    );
-
-    // 外部配信時刻。毎日連載は公開日時と同じになるので触らせない
-    const extCell = createGroupInput(
-      'extTime',
-      'time',
-      group.mode === 'daily' ? group.gloTime : group.extTime,
-      index,
-      '外部配信時刻'
-    );
-
-    if (group.mode === 'daily') {
-      const input = extCell.children[0];
-
-      input.disabled = true;
-      input.title = '毎日連載では公開日時と同じになります';
-    }
-
-    tr.appendChild(extCell);
+    // 時刻。GLO公開・外部配信で共通
+    tr.appendChild(createGroupInput('time', 'time', group.time, index, '時刻'));
 
     // 削除。先頭のグループは消せない
     const actionCell = document.createElement('td');
@@ -903,20 +885,9 @@ function applyPubGroupChange(target) {
     group.startNumber = clampEpisodeCount(value, MIN_EPISODE_COUNT);
   } else if (field === 'mode') {
     group.mode = target.value === 'daily' ? 'daily' : 'bulk';
-
-    // 毎日連載に変えたら外部配信時刻は公開時刻に合わせる
-    if (group.mode === 'daily') group.extTime = group.gloTime;
-
     renderPubGroups();
   } else {
     group[field] = target.value;
-
-    // 一括で外部配信時刻を空のままにしておくと計算できないので、
-    // 公開時刻を変えたときは同じ時刻を初期値として入れておく
-    if (field === 'gloTime' && !group.extTime) {
-      group.extTime = target.value;
-      renderPubGroups();
-    }
   }
 
   buildRowDates();
@@ -927,7 +898,7 @@ function addPubGroup() {
   const groups = normalizePubGroups();
   const last = groups[groups.length - 1];
 
-  // 直前のグループの次の回から始める。回数を超えるときは最終回に寄せる
+  // 直前のグループの次の回から始める。回数を超えるときは一番最後の回に寄せる
   const startNumber = Math.min(
     last ? last.startNumber + 1 : 1,
     Math.max(state.rows.length, MIN_EPISODE_COUNT)
@@ -941,8 +912,9 @@ function addPubGroup() {
     // 日付は引き継がない。前のグループと同じ日付のまま気づかず使うのを避ける
     date: '',
     mode: (previous && previous.mode) || 'bulk',
-    gloTime: (previous && previous.gloTime) || '21:00',
-    extTime: (previous && previous.extTime) || '21:00',
+
+    // 時刻は変えることが多いが、空だと計算できないので前の値を初期値にする
+    time: (previous && previous.time) || '21:00',
   });
 
   renderPubGroups();
@@ -1036,8 +1008,7 @@ function initPubFields() {
       startNumber: 1,
       date: fmtDateInput(new Date()),
       mode: 'bulk',
-      gloTime: '21:00',
-      extTime: '21:00',
+      time: '21:00',
     },
   ];
 
@@ -1464,13 +1435,13 @@ function renderBottomTable() {
 
     // 記事下リンクの週は回ごとに違う。外部配信日で突き合わせる
     const hit = findSheetRowForRow(row);
-    const bottomHtml = hit ? buildArticleBottomHtml(hit.html, row.isFinal) : '';
+    const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
 
     const reason = bottomCopyBlockReason(link, row, hit, bottomHtml);
 
     const tr = document.createElement('tr');
 
-    // 回ラベル列の左バーで、最終回と手当てが要る回を離れていても分かるようにする
+    // 回ラベル列の左バーで、最後の回と手当てが要る回を離れていても分かるようにする
     if (row.isFinal) tr.classList.add('is-final');
     if (needsAttention(link, reason)) tr.classList.add('is-flag');
 
@@ -1539,7 +1510,7 @@ function resolveNextLink(row) {
     return { kind: 'no-episode', nextLabel: `第${row.number + 1}回`, html: '' };
   }
 
-  // 表示は「第3回」ではなく①タブと同じ呼び方（最終回）に揃える
+  // 表示は①タブと同じ回ラベルに揃える
   if (!nextId) {
     return { kind: 'no-id', nextLabel: next.label, next, html: '' };
   }
@@ -1558,11 +1529,11 @@ function createNextCell(link) {
   const cell = document.createElement('td');
   cell.className = 'col-next';
 
-  // 最終回に「続き」は無い。ここに文言を出すと、記事下にそのまま貼る文だと
+  // 一番最後の回に「続き」は無い。ここに文言を出すと、記事下にそのまま貼る文だと
   // 誤解されるので出さない（実際に貼る文言はコピーしたHTMLに入っている）
   if (link.kind === 'final') {
     cell.appendChild(
-      createLine('—', 'faint', '最終回のため、続きを読むはありません')
+      createLine('—', 'faint', '一番最後の回のため、続きを読むはありません')
     );
     return cell;
   }
@@ -1986,7 +1957,7 @@ function buildNextArticleHtml(articleId, articleTitle) {
   );
 }
 
-// 最終回はこの文言で固定する
+// 一番最後の回は、続きのリンクの代わりにこの文言を入れる。文言は固定
 const FINAL_MESSAGE = '試し読み連載は今回で最終回です。ご愛読ありがとうございました。';
 
 function buildFinalEpisodeHtml() {
@@ -2015,8 +1986,8 @@ function joinBottomHtml(headHtml, bottomHtml) {
 // 古い行には【人気記事】も入っている。いずれも1つの <p>…</p> に収まっているので、
 // 落とすときはその段落だけを丸ごと消す。
 //
-//   通常回：【注目記事】【人気記事】を落とす（残すのは【イチオシ記事】）
-//   最終回：【人気記事】だけ落とす（【注目記事】は残す）
+// 一括集中では【注目記事】【人気記事】とも**全回落とす**。残すのは【イチオシ記事】。
+// （再掲連載アシスタントは最終回だけ【注目記事】を残すが、こちらは残さない）
 //
 // 判定は必ず【注目記事】【人気記事】という記事ラベルで行う。
 // 「注目」「人気」だけで判定すると、書籍タイトルの
@@ -2033,22 +2004,15 @@ const DROP_ATTENTION_RE =
 const DROP_POPULAR_RE =
   /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?【人気記事】[\s\S]*?<\/p>[ \t]*(?:\r?\n)*/g;
 
-// 全回まとめて注目記事を落としてから最終回を判定する、という順序にはしない。
-// 先に落としてしまうと最終回で復元できないため、必ず isFinal で分岐させる。
-function removeDroppedParagraphs(html, isFinal) {
-  const source = String(html || '');
-
-  if (isFinal) {
-    // 最終回は【注目記事】を残す。落とすのは【人気記事】だけ
-    return source.replace(DROP_POPULAR_RE, '');
-  }
-
-  return source.replace(DROP_ATTENTION_RE, '').replace(DROP_POPULAR_RE, '');
+function removeDroppedParagraphs(html) {
+  return String(html || '')
+    .replace(DROP_ATTENTION_RE, '')
+    .replace(DROP_POPULAR_RE, '');
 }
 
 // 「連載記事一覧はこちら」の誘導先。
 //
-// 新規連載なので参照元は無い。通常回も最終回も今回のカテゴリコードへ送る。
+// 新規連載なので参照元は無い。全回とも今回のカテゴリコードへ送る。
 // （再掲では通常回だけ参照元へ送るが、ここには参照元が存在しない）
 function getListTarget() {
   const series = state.series;
@@ -2077,10 +2041,10 @@ function stripPickupSuffix(value) {
 }
 
 // スプレッドシートC列HTMLのプレースホルダーを今回の連載に置き換える
-function buildArticleBottomHtml(cHtml, isFinal) {
+function buildArticleBottomHtml(cHtml) {
   // 置換より先に落とす。
   // 書籍タイトルを入れてから消すと、タイトル次第で判定が変わりうる
-  let c = removeDroppedParagraphs(String(cHtml || '').trim(), isFinal).trim();
+  let c = removeDroppedParagraphs(String(cHtml || '').trim()).trim();
 
   if (!c) return '';
 

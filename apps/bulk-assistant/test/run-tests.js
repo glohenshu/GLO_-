@@ -293,21 +293,18 @@ function setup(options = {}) {
 
   state.series = options.series === undefined ? SERIES : options.series;
 
-  const time = options.pubTime === undefined ? PUB_TIME : options.pubTime;
-
   // グループはアプリ側で書き換わる（追加・削除・並べ替え）。
   // テスト間で共有すると前のテストの結果を引きずるのでコピーを渡す
   state.pubGroups = options.pubGroups
     ? options.pubGroups.map((group) => ({ ...group }))
     : [
-    {
-      startNumber: 1,
-      date: options.pubDate === undefined ? PUB_DATE : options.pubDate,
-      mode: options.mode || 'bulk',
-      gloTime: time,
-      extTime: options.extTime === undefined ? time : options.extTime,
-    },
-  ];
+        {
+          startNumber: 1,
+          date: options.pubDate === undefined ? PUB_DATE : options.pubDate,
+          mode: options.mode || 'bulk',
+          time: options.pubTime === undefined ? PUB_TIME : options.pubTime,
+        },
+      ];
 
   app.renderPubGroups();
 
@@ -473,7 +470,7 @@ check('開いた時点で既定の回数ぶん行ができている', () => {
   );
 });
 
-check('最後の行だけ「最終回」になる', () => {
+check('全回とも第N回で通す（最終回とは呼ばない）', () => {
   const app = loadApp();
 
   setCountByInput(app, 4);
@@ -481,17 +478,29 @@ check('最後の行だけ「最終回」になる', () => {
   const labels = app.state.rows.map((row) => row.label);
 
   return (
-    labels.join(',') === '第1回,第2回,第3回,最終回' || `→ ${labels.join(',')}`
+    labels.join(',') === '第1回,第2回,第3回,第4回' || `→ ${labels.join(',')}`
   );
 });
 
-check('1回だけのときは最終回だけになる', () => {
+check('一番最後の回だけ isFinal が立つ', () => {
+  const app = loadApp();
+
+  setCountByInput(app, 4);
+
+  const flags = app.state.rows.map((row) => (row.isFinal ? '1' : '0'));
+
+  return flags.join('') === '0001' || `→ ${flags.join('')}`;
+});
+
+check('1回だけのときはその回が一番最後の回になる', () => {
   const app = loadApp();
 
   setCountByInput(app, 1);
 
   return (
-    (app.state.rows.length === 1 && app.state.rows[0].label === '最終回') ||
+    (app.state.rows.length === 1 &&
+      app.state.rows[0].label === '第1回' &&
+      app.state.rows[0].isFinal === true) ||
     `→ ${app.state.rows.map((r) => r.label).join(',')}`
   );
 });
@@ -942,17 +951,17 @@ check('最終回の行に続きの文言を表示しない', () => {
   );
 });
 
-check('次の回が最終回なら「次回：最終回」と出す', () => {
+check('次の回のラベルは①タブと同じ第N回で出す', () => {
   const app = setup({ episodeCount: 3 });
 
-  typeInto(app, 2, { id: '30003', title: '最終回のタイトル' });
+  typeInto(app, 2, { id: '30003', title: '3回目のタイトル' });
   app.renderBottomTable();
 
   const row = bottomRow(app, 1);
 
   return (
-    (row.text.includes('次回：最終回／ID 30003') &&
-      !row.text.includes('次回：第3回')) ||
+    (row.text.includes('次回：第3回／ID 30003') &&
+      !row.text.includes('最終回')) ||
     `→ ${row.text}`
   );
 });
@@ -989,10 +998,10 @@ check('タイトルに記号が残っていたら要確認を出す（自動で�
 
 group('② 記事下');
 
-check('通常回は【注目記事】【人気記事】を落とす', () => {
+check('【注目記事】【人気記事】は全回落とす', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
 
   return (
     (!html.includes('【注目記事】') &&
@@ -1002,13 +1011,22 @@ check('通常回は【注目記事】【人気記事】を落とす', () => {
   );
 });
 
-check('最終回は【注目記事】を残し【人気記事】だけ落とす', () => {
+check('一番最後の回でも【注目記事】は残さない', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), true);
+  typeInto(app, 1, { id: '30002' });
+  app.renderBottomTable();
+
+  const last = app.state.rows[2];
+  const hit = app.findSheetRowForRow(last);
+  const html = app.joinBottomHtml(
+    app.resolveNextLink(last).html,
+    app.buildArticleBottomHtml(hit.html)
+  );
 
   return (
-    (html.includes('【注目記事】') &&
+    (last.isFinal === true &&
+      !html.includes('【注目記事】') &&
       !html.includes('【人気記事】') &&
       html.includes('【イチオシ記事】')) ||
     `→ ${html}`
@@ -1018,7 +1036,7 @@ check('最終回は【注目記事】を残し【人気記事】だけ落とす'
 check('grxxxx を今回のカテゴリコードに置き換える', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
 
   return (
     (html.includes('/category/gr1974') && !html.includes('grxxxx')) || `→ ${html}`
@@ -1028,7 +1046,7 @@ check('grxxxx を今回のカテゴリコードに置き換える', () => {
 check('xxxxxxxx を書籍タイトルに置き換える', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
 
   return (
     (html.includes('『七つのショートしょーと』') && !html.includes('xxxxxxxx')) ||
@@ -1039,8 +1057,8 @@ check('xxxxxxxx を書籍タイトルに置き換える', () => {
 check('最終回も今回のカテゴリコードへ送る（参照元が無いため）', () => {
   const app = setup({ episodeCount: 3 });
 
-  const normal = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
-  const final = app.buildArticleBottomHtml(weekHtmlOf(app, 0), true);
+  const normal = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
+  const final = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
 
   return (
     (normal.includes('/category/gr1974') && final.includes('/category/gr1974')) ||
@@ -1070,7 +1088,7 @@ check('書籍名の『』は二重にしない', () => {
     series: { ...SERIES, bookTitle: '『七つのショートしょーと』' },
   });
 
-  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
 
   return (
     (html.includes('『七つのショートしょーと』') &&
@@ -1082,7 +1100,7 @@ check('書籍名の『』は二重にしない', () => {
 check('C列の先頭の余白を続きを読むの上へ回す', () => {
   const app = setup({ episodeCount: 3 });
 
-  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
   const joined = app.joinBottomHtml('<p>HEAD</p>', bottom);
 
   return (
@@ -1105,7 +1123,7 @@ check('まとめてコピーが指定の並びになる', () => {
   app.renderBottomTable();
 
   const link = app.resolveNextLink(app.state.rows[0]);
-  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0));
   const joined = app.joinBottomHtml(link.html, bottom);
 
   const order = [
@@ -1336,15 +1354,13 @@ const SPLIT_GROUPS = [
     startNumber: 1,
     date: '2026-08-18',
     mode: 'bulk',
-    gloTime: '21:00',
-    extTime: '21:00',
+    time: '21:00',
   },
   {
     startNumber: 11,
     date: '2026-08-31',
     mode: 'bulk',
-    gloTime: '14:00',
-    extTime: '14:00',
+    time: '14:00',
   },
 ];
 
@@ -1400,31 +1416,25 @@ check('前のグループは後ろのグループの手前で終わる', () => {
   );
 });
 
-check('② 公開時刻と外部配信時刻を別にできる', () => {
+check('② グループごとに時刻を変えられる（公開・外部とも同じ時刻）', () => {
   const app = setup({
-    episodeCount: 4,
+    episodeCount: 12,
     pubGroups: [
-      {
-        startNumber: 1,
-        date: '2026-08-31',
-        mode: 'bulk',
-        gloTime: '14:00',
-        extTime: '21:00',
-      },
+      { startNumber: 1, date: '2026-08-18', mode: 'bulk', time: '21:00' },
+      { startNumber: 11, date: '2026-08-31', mode: 'bulk', time: '14:00' },
     ],
   });
 
-  const got = app.state.rows.map(
-    (row) => `${stamp(app, row.gloAt)}／${stamp(app, row.extAt)}`
+  const got = [0, 10, 11].map(
+    (i) => `${stamp(app, app.state.rows[i].gloAt)}／${stamp(app, app.state.rows[i].extAt)}`
   );
 
   return (
     got.join(' | ') ===
       [
-        '2026/08/31 14:00／2026/08/31 21:00',
-        '2026/08/31 14:01／2026/09/01 21:00',
-        '2026/08/31 14:02／2026/09/02 21:00',
-        '2026/08/31 14:03／2026/09/03 21:00',
+        '2026/08/18 21:00／2026/08/18 21:00',
+        '2026/08/31 14:00／2026/08/31 14:00',
+        '2026/08/31 14:01／2026/09/01 14:00',
       ].join(' | ') || `→ ${got.join(' | ')}`
   );
 });
@@ -1437,8 +1447,7 @@ check('③ 毎日連載は1日ずつ・分ずらし無し・公開と外部配�
         startNumber: 1,
         date: '2026-08-31',
         mode: 'daily',
-        gloTime: '14:00',
-        extTime: '14:00',
+        time: '14:00',
       },
     ],
   });
@@ -1458,24 +1467,22 @@ check('③ 毎日連載は1日ずつ・分ずらし無し・公開と外部配�
   );
 });
 
-check('毎日連載では外部配信時刻の指定を無視して公開時刻に合わせる', () => {
+check('時刻はGLO公開と外部配信で共通', () => {
   const app = setup({
     episodeCount: 2,
     pubGroups: [
-      {
-        startNumber: 1,
-        date: '2026-08-31',
-        mode: 'daily',
-        gloTime: '14:00',
-        // 残っていても使わない
-        extTime: '21:00',
-      },
+      { startNumber: 1, date: '2026-08-31', mode: 'bulk', time: '14:00' },
     ],
   });
 
+  // 一括でも分ずらしが乗るのはGLO公開だけ。外部配信は時刻そのまま
   return (
-    stamp(app, app.state.rows[0].extAt) === '2026/08/31 14:00' ||
-    `→ ${stamp(app, app.state.rows[0].extAt)}`
+    (stamp(app, app.state.rows[1].gloAt) === '2026/08/31 14:01' &&
+      stamp(app, app.state.rows[1].extAt) === '2026/09/01 14:00') ||
+    `→ ${stamp(app, app.state.rows[1].gloAt)} / ${stamp(
+      app,
+      app.state.rows[1].extAt
+    )}`
   );
 });
 
@@ -1487,15 +1494,13 @@ check('一括と毎日を混ぜられる', () => {
         startNumber: 1,
         date: '2026-08-18',
         mode: 'bulk',
-        gloTime: '21:00',
-        extTime: '21:00',
+        time: '21:00',
       },
       {
         startNumber: 4,
         date: '2026-08-31',
         mode: 'daily',
-        gloTime: '14:00',
-        extTime: '14:00',
+        time: '14:00',
       },
     ],
   });
@@ -1523,15 +1528,13 @@ check('開始回が逆順でも並べ直して使う', () => {
         startNumber: 4,
         date: '2026-08-31',
         mode: 'bulk',
-        gloTime: '14:00',
-        extTime: '14:00',
+        time: '14:00',
       },
       {
         startNumber: 1,
         date: '2026-08-18',
         mode: 'bulk',
-        gloTime: '21:00',
-        extTime: '21:00',
+        time: '21:00',
       },
     ],
   });
@@ -1553,8 +1556,7 @@ check('先頭のグループは必ず第1回から始める', () => {
         startNumber: 3,
         date: '2026-08-18',
         mode: 'bulk',
-        gloTime: '21:00',
-        extTime: '21:00',
+        time: '21:00',
       },
     ],
   });
@@ -1574,15 +1576,13 @@ check('開始回が重なったら1つ後ろへずらす', () => {
         startNumber: 1,
         date: '2026-08-18',
         mode: 'bulk',
-        gloTime: '21:00',
-        extTime: '21:00',
+        time: '21:00',
       },
       {
         startNumber: 1,
         date: '2026-08-31',
         mode: 'bulk',
-        gloTime: '14:00',
-        extTime: '14:00',
+        time: '14:00',
       },
     ],
   });
