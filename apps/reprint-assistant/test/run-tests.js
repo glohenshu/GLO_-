@@ -171,6 +171,7 @@ const APP_SOURCE =
   buildPreviousHtmlFor, buildPreviousArticleHtml,
   buildNextArticleHtml, buildArticleBottomHtml, buildFinalEpisodeHtml,
   removeDroppedParagraphs, getListTarget, sheetBlockReason, buildNextArticleTemplateHtml,
+  joinBottomHtml,
   resolveNextLink, bottomCopyBlockReason, findSheetRowForRow,
   parsePeriodParts, assignRowYears, fmtPeriodRange,
   renderNextTable, fmtNextUpdate, parseTimeInput, parseDateInput, renderCommon,
@@ -526,12 +527,17 @@ check('小数は切り捨てる', () => {
   return app.state.episodeCount === 3 || `→ ${app.state.episodeCount}`;
 });
 
-check('参照元が未選択なら回数を変えられない', () => {
+check('参照元が未選択でも回数を決められる（前回記事タブ用）', () => {
   const app = loadApp();
+
   app.state.selectedSource = null;
   app.state.sourceCount = 0;
   app.setEpisodeCount(5);
-  return app.state.episodeCount === 0 || `→ ${app.state.episodeCount}`;
+
+  return (
+    (app.state.episodeCount === 5 && app.state.rows.length === 5) ||
+    `→ ${app.state.episodeCount} / ${app.state.rows.length}行`
+  );
 });
 
 // ============================================================
@@ -908,8 +914,51 @@ check('参照元の記事タイトルの記号をエスケープする', () => {
   );
 });
 
+check('記事下は余白の段落を先頭に回して1つにまとめる', () => {
+  const app = setup();
+
+  const row = app.state.rows[0];
+  const hit = app.findSheetRowForRow(row);
+  const link = app.resolveNextLink(row);
+
+  // 実際のC列は先頭に余白の段落が入っている
+  const bottomHtml =
+    '<p>　</p>\n' + app.buildArticleBottomHtml(hit.html, row.isFinal);
+
+  const joined = app.joinBottomHtml(link.html, bottomHtml);
+  const lines = joined.split('\n');
+
+  return (
+    (lines[0] === '<p>　</p>' &&
+      lines[1].startsWith('<p>▶この話の続きを読む') &&
+      !joined.includes('</p>\n<p>　</p>')) ||
+    `→ ${lines.slice(0, 2).join(' / ')}`
+  );
+});
+
+check('余白の段落が無いC列はそのままつなぐ', () => {
+  const app = setup();
+
+  const joined = app.joinBottomHtml('<p>先頭</p>', '<p>本体</p>');
+
+  return joined === '<p>先頭</p>\n<p>本体</p>' || `→ ${joined}`;
+});
+
+check('全角スペース以外の余白段落も先頭へ回す', () => {
+  const app = setup();
+
+  const got = [
+    app.joinBottomHtml('<p>頭</p>', '<p>&nbsp;</p>\n<p>本体</p>'),
+    app.joinBottomHtml('<p>頭</p>', '<p align="center">　</p>\n<p>本体</p>'),
+  ];
+
+  return (
+    got.every((html) => html.split('\n')[1] === '<p>頭</p>') || `→ ${got.join(' || ')}`
+  );
+});
+
 // ============================================================
-// 5. 参照元タイトルの確認手段
+// 6. 参照元タイトルの確認手段
 // ============================================================
 
 group('参照元タイトルの確認');
@@ -1768,13 +1817,53 @@ check('最終回のツールチップは今回の一覧を指す', () => {
   );
 });
 
-check('参照元が未選択のときは作業行を作らない', () => {
+check('回数が0なら作業行を作らない', () => {
   const app = loadApp();
 
   app.state.series = SERIES;
   app.buildRows();
 
   return app.state.rows.length === 0 || `→ ${app.state.rows.length}行`;
+});
+
+check('連載を取得しなくても前回記事HTMLを作れる', () => {
+  const app = loadApp();
+
+  // カテゴリコードも参照元も無い状態で、回数だけ決める
+  app.setEpisodeCount(3);
+  app.renderPrevTable();
+
+  app.el.prevBody.children[0].children[1].children[0].value = '30001';
+  app.el.prevBody.dispatch('input', {
+    target: app.el.prevBody.children[0].children[1].children[0],
+  });
+
+  app.el.prevBody.children[0].children[2].children[0].value = '第1回のタイトル';
+  app.el.prevBody.dispatch('input', {
+    target: app.el.prevBody.children[0].children[2].children[0],
+  });
+
+  return (
+    app.buildPreviousHtmlFor(1) ===
+      '<p align="center"><a href="/articles/-/30001" target="_blank">' +
+        '<strong><span style="color:#0000CD;">【前回の記事を読む】第1回のタイトル</span></strong>' +
+        '</a></p>' ||
+    `→ ${app.buildPreviousHtmlFor(1)}`
+  );
+});
+
+check('前回記事タブの回数入力は共通エリアと同じ値を見る', () => {
+  const app = setup();
+
+  app.el.prevCount.value = '4';
+  app.el.prevCount.dispatch('input');
+
+  return (
+    (app.state.episodeCount === 4 &&
+      app.el.countInput.value === '4' &&
+      app.el.prevBody.children.length === 4) ||
+    `→ ${app.state.episodeCount} / ${app.el.countInput.value}`
+  );
 });
 
 // ============================================================

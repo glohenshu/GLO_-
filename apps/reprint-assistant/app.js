@@ -119,6 +119,9 @@ const el = {
   bulkApply: document.getElementById('bulk-apply'),
   bulkClear: document.getElementById('bulk-clear'),
   bulkStatus: document.getElementById('bulk-status'),
+  prevCount: document.getElementById('prev-count'),
+  prevCountMinus: document.getElementById('prev-count-minus'),
+  prevCountPlus: document.getElementById('prev-count-plus'),
 
   prevBody: document.getElementById('prev-body'),
   bottomBody: document.getElementById('bottom-body'),
@@ -304,6 +307,43 @@ el.nextCopyAll.addEventListener('click', () => {
 el.finalMessage.addEventListener('change', () => {
   state.finalMessage = el.finalMessage.value;
   renderNextTable();
+});
+
+// ---- ① 前回記事タブの回数 ----
+//
+// 共通エリアの「再掲連載回数」と同じ値。
+// カテゴリコードを取得していなくても行を作れるようにするため、こちらにも置く
+
+el.prevCount.addEventListener('input', () => {
+  const value = parseCountInput(el.prevCount.value);
+
+  if (!Number.isFinite(value) || value < MIN_EPISODE_COUNT) return;
+
+  setEpisodeCount(value);
+});
+
+el.prevCount.addEventListener('change', () => commitPrevCount());
+el.prevCount.addEventListener('blur', () => commitPrevCount());
+
+el.prevCount.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+    setEpisodeCount(state.episodeCount + (event.key === 'ArrowUp' ? 1 : -1));
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    commitPrevCount();
+  }
+});
+
+el.prevCountMinus.addEventListener('click', () => {
+  setEpisodeCount(state.episodeCount - 1);
+});
+
+el.prevCountPlus.addEventListener('click', () => {
+  setEpisodeCount(state.episodeCount + 1);
 });
 
 el.bulkApply.addEventListener('click', () => {
@@ -699,6 +739,12 @@ function parseCountInput(text) {
   return digits ? Number(digits) : NaN;
 }
 
+function commitPrevCount() {
+  const value = parseCountInput(el.prevCount.value);
+
+  setEpisodeCount(Number.isFinite(value) ? value : state.episodeCount);
+}
+
 function commitCountInput() {
   const value = parseCountInput(el.countInput.value);
 
@@ -706,12 +752,6 @@ function commitCountInput() {
 }
 
 function setEpisodeCount(value) {
-  // 参照元が未選択のうちは回数という概念自体が無い
-  if (!state.selectedSource || !state.sourceCount) {
-    renderCountControl();
-    return;
-  }
-
   const next = clampEpisodeCount(value, MIN_EPISODE_COUNT);
 
   if (next !== state.episodeCount) {
@@ -734,6 +774,14 @@ function renderCountControl() {
   el.countMinus.disabled = !hasSource || count <= MIN_EPISODE_COUNT;
   el.countPlus.disabled = !hasSource || count >= MAX_EPISODE_COUNT;
   el.countReset.disabled = !hasSource || count === state.sourceCount;
+
+  // 前回記事タブ側は連載を取得していなくても使うので、いつでも触れる
+  el.prevCountMinus.disabled = count <= MIN_EPISODE_COUNT;
+  el.prevCountPlus.disabled = count >= MAX_EPISODE_COUNT;
+
+  const prevText = count ? String(count) : '';
+
+  if (el.prevCount.value !== prevText) el.prevCount.value = prevText;
 
   // 入力中のカーソルが飛ばないよう、違うときだけ書き換える
   const text = hasSource ? String(count) : '';
@@ -812,7 +860,7 @@ function buildRows() {
 
   const total = state.episodeCount;
 
-  if (!state.selectedSource || !total) return;
+  if (!total) return;
 
   const base = getFirstDeliveryParts();
 
@@ -994,7 +1042,7 @@ function renderPrevTable() {
 
   if (!state.rows.length) {
     el.prevBody.appendChild(
-      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
+      createEmptyRow(5, '回数を入れると作業行を作成します')
     );
     return;
   }
@@ -1334,7 +1382,7 @@ function renderBottomTable() {
 
   if (!state.rows.length) {
     el.bottomBody.appendChild(
-      createEmptyRow(5, '参照元連載を選択すると作業行を作成します')
+      createEmptyRow(5, '回数を入れると作業行を作成します')
     );
     return;
   }
@@ -1371,7 +1419,7 @@ function renderBottomTable() {
       actionCell.appendChild(
         createCopyButton(
           '記事下テンプレをコピー',
-          () => `${buildNextArticleTemplateHtml()}\n${bottomHtml}`,
+          () => joinBottomHtml(buildNextArticleTemplateHtml(), bottomHtml),
           `続きを読むのリンク先は ${NEXT_LINK_PLACEHOLDER} のままです。MWで差し替えてください`,
           'strong template'
         )
@@ -1384,7 +1432,7 @@ function renderBottomTable() {
       actionCell.appendChild(
         createCopyButton(
           '記事下まとめてコピー',
-          () => `${link.html}\n${bottomHtml}`,
+          () => joinBottomHtml(link.html, bottomHtml),
           '記事下HTMLをコピーしました',
           'strong'
         )
@@ -1404,6 +1452,24 @@ function needsAttention(link, reason) {
   if (link.kind !== 'ok') return false;
 
   return findRiskyTitleParts(link.source && link.source.articleTitle).length > 0;
+}
+
+// スプレッドシートC列は先頭に余白の段落 <p>　</p> が入っている。
+// そのまま後ろにつなぐと「続きを読む」の下に余白が来てしまうので、
+// 余白は先頭へ回して、続きを読むの上に空きを作る。
+//
+//   <p>　</p>
+//   <p>▶この話の続きを読む…</p>
+//   <p>…連載記事一覧…</p>
+const LEADING_SPACER_RE = /^\s*<p(?:\s[^>]*)?>(?:\s|　|&nbsp;)*<\/p>\s*/i;
+
+function joinBottomHtml(headHtml, bottomHtml) {
+  const body = String(bottomHtml || '');
+  const match = body.match(LEADING_SPACER_RE);
+
+  if (!match) return `${headHtml}\n${body}`;
+
+  return `${match[0].trim()}\n${headHtml}\n${body.slice(match[0].length)}`;
 }
 
 // 今回の第N回 → 参照元の第(N+1)回。公開日時ではなく回数で突き合わせる。

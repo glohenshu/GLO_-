@@ -123,6 +123,27 @@
     <!-- ---- ① 前回記事 ---- -->
     <div class="tabpanel" id="panel-prev" role="tabpanel" aria-labelledby="tab-prev">
 
+      <!-- カテゴリコードを取得しなくても使えるよう、ここでも回数を決められるようにする。
+           共通エリアの「再掲連載回数」と同じ値を見ている -->
+      <div class="next-settings">
+        <div class="next-field">
+          <label class="count-label" id="prev-count-label">回数</label>
+
+          <div class="count-control" role="group" aria-labelledby="prev-count-label">
+            <button type="button" id="prev-count-minus" class="step"
+                    aria-label="回数を1回減らす">−</button>
+            <input id="prev-count" class="count-input mono" type="text"
+                   inputmode="numeric" autocomplete="off" spellcheck="false"
+                   aria-label="回数">
+            <button type="button" id="prev-count-plus" class="step"
+                    aria-label="回数を1回増やす">＋</button>
+            <span class="count-unit">回</span>
+          </div>
+
+          <span class="note">参照元を選ぶと、その回数が入ります</span>
+        </div>
+      </div>
+
       <div class="bulk">
         <label for="bulk-input">記事IDを一括貼り付け</label>
         <textarea id="bulk-input" rows="4" spellcheck="false"
