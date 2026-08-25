@@ -10,7 +10,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.0.5</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.0.6</span></h1>
 
     <div class="search-row">
       <label for="code-input">カテゴリコード</label>
@@ -145,6 +145,38 @@
     <!-- ---- ② この話の続き ---- -->
     <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
 
+      <!-- 回数と記事IDは①タブと同じものを操作する。
+           タブを行き来せずに済むよう、こちらにも入口を置く -->
+      <div class="next-settings">
+        <div class="next-field">
+          <label class="count-label" id="bottom-count-label">回数</label>
+
+          <div class="count-control" role="group" aria-labelledby="bottom-count-label">
+            <button type="button" id="bottom-count-minus" class="step"
+                    aria-label="回数を1回減らす">−</button>
+            <input id="bottom-count" class="count-input mono" type="text"
+                   inputmode="numeric" autocomplete="off" spellcheck="false"
+                   aria-label="回数">
+            <button type="button" id="bottom-count-plus" class="step"
+                    aria-label="回数を1回増やす">＋</button>
+            <span class="count-unit">回</span>
+          </div>
+
+          <span class="note">①前回記事リンク作成タブと同じ回数です</span>
+        </div>
+      </div>
+
+      <div class="bulk">
+        <label for="bottom-bulk-input">記事IDを一括貼り付け</label>
+        <textarea id="bottom-bulk-input" rows="4" spellcheck="false"
+                  placeholder="30001&#10;30002&#10;30003"></textarea>
+        <div class="bulk-actions">
+          <button type="button" id="bottom-bulk-apply" class="primary small">各回に反映</button>
+          <button type="button" id="bottom-bulk-clear" class="copy mini">記事IDをすべて消す</button>
+          <span id="bottom-bulk-status" class="note"></span>
+        </div>
+      </div>
+
       <!-- 1本の連載を何回かに分けて一括公開することがあるので、
            「この回から」で区切ったグループごとに日付と方式を決める。
            記事下リンクの週は外部配信日で判定する -->
@@ -170,6 +202,9 @@
       </div>
 
       <dl class="hint hint-defs">
+        <dt>回数・記事ID</dt>
+        <dd>①前回記事リンク作成タブと同じものです。どちらで入れても両方に反映されます。「この話の続きを読む」は、ここに入れた次の回の記事IDから作ります。</dd>
+
         <dt>公開グループ</dt>
         <dd>第11回から日付や時刻を変えて追加公開する、といった分割に使います。「グループを追加」で区切りを増やし、開始回・開始日・方式・時刻をグループごとに決めます。</dd>
 

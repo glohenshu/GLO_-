@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.5
+   新規一括集中アシスタント Ver.0.6
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -108,6 +108,15 @@ const el = {
   prevCountPlus: document.getElementById('prev-count-plus'),
   prevBody: document.getElementById('prev-body'),
 
+  // ②タブ側の入口。①と同じ回数・記事IDを操作する
+  bottomCount: document.getElementById('bottom-count'),
+  bottomCountMinus: document.getElementById('bottom-count-minus'),
+  bottomCountPlus: document.getElementById('bottom-count-plus'),
+  bottomBulkInput: document.getElementById('bottom-bulk-input'),
+  bottomBulkApply: document.getElementById('bottom-bulk-apply'),
+  bottomBulkClear: document.getElementById('bottom-bulk-clear'),
+  bottomBulkStatus: document.getElementById('bottom-bulk-status'),
+
   pubGroupBody: document.getElementById('pub-group-body'),
   pubGroupAdd: document.getElementById('pub-group-add'),
   pubStatus: document.getElementById('pub-status'),
@@ -170,50 +179,71 @@ el.tabButtons.forEach((button) => {
 });
 
 // ---- 回数 ----
+//
+// ①と②に同じ入口を置く。どちらも state.episodeCount 1つを見ている。
+// タブを行き来せずに回数を変えられるようにするため
 
-el.prevCount.addEventListener('input', () => {
-  const value = parseCountInput(el.prevCount.value);
+function bindCountControl(input, minus, plus) {
+  input.addEventListener('input', () => {
+    const value = parseCountInput(input.value);
 
-  // 入力途中（空欄・全角のみ等）はまだ反映しない。
-  // 数として読める値になった時点で行を作り直す
-  if (!Number.isFinite(value) || value < MIN_EPISODE_COUNT) return;
+    // 入力途中（空欄・全角のみ等）はまだ反映しない。
+    // 数として読める値になった時点で行を作り直す
+    if (!Number.isFinite(value) || value < MIN_EPISODE_COUNT) return;
 
-  setEpisodeCount(value);
-});
+    setEpisodeCount(value);
+  });
 
-el.prevCount.addEventListener('change', () => commitPrevCount());
-el.prevCount.addEventListener('blur', () => commitPrevCount());
+  input.addEventListener('change', () => commitCountInput(input));
+  input.addEventListener('blur', () => commitCountInput(input));
 
-el.prevCount.addEventListener('keydown', (event) => {
-  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    event.preventDefault();
-    setEpisodeCount(state.episodeCount + (event.key === 'ArrowUp' ? 1 : -1));
-    return;
-  }
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      setEpisodeCount(state.episodeCount + (event.key === 'ArrowUp' ? 1 : -1));
+      return;
+    }
 
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    commitPrevCount();
-  }
-});
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      commitCountInput(input);
+    }
+  });
 
-el.prevCountMinus.addEventListener('click', () => {
-  setEpisodeCount(state.episodeCount - 1);
-});
+  minus.addEventListener('click', () => {
+    setEpisodeCount(state.episodeCount - 1);
+  });
 
-el.prevCountPlus.addEventListener('click', () => {
-  setEpisodeCount(state.episodeCount + 1);
-});
+  plus.addEventListener('click', () => {
+    setEpisodeCount(state.episodeCount + 1);
+  });
+}
+
+bindCountControl(el.prevCount, el.prevCountMinus, el.prevCountPlus);
+bindCountControl(el.bottomCount, el.bottomCountMinus, el.bottomCountPlus);
 
 // ---- 記事IDの一括貼り付け ----
+//
+// こちらも①と②に同じ入口を置く。書き込む先は同じ state.rows
 
-el.bulkApply.addEventListener('click', () => {
-  applyBulkIds();
-});
+function bindBulkControl(input, apply, clear) {
+  apply.addEventListener('click', () => {
+    applyBulkIds(input);
+  });
 
-el.bulkClear.addEventListener('click', () => {
-  clearArticleIds();
-});
+  clear.addEventListener('click', () => {
+    clearArticleIds();
+  });
+
+  // 片方に貼ったらもう片方にも同じ文字列を映す。
+  // 「別々の入力欄」だと思われて二重に貼られるのを避ける
+  input.addEventListener('input', () => {
+    syncBulkInputs(input);
+  });
+}
+
+bindBulkControl(el.bulkInput, el.bulkApply, el.bulkClear);
+bindBulkControl(el.bottomBulkInput, el.bottomBulkApply, el.bottomBulkClear);
 
 // 記事ID・記事タイトルは行ごとに個別入力もできる。
 // 入力した行の値は「次の行の前回記事」にだけ効くので、そこだけ更新する。
@@ -519,8 +549,8 @@ function parseCountInput(text) {
 }
 
 // 確定時に表示を正規化する。読めない値のときは今の回数に戻す
-function commitPrevCount() {
-  const value = parseCountInput(el.prevCount.value);
+function commitCountInput(input) {
+  const value = parseCountInput(input.value);
 
   setEpisodeCount(Number.isFinite(value) ? value : state.episodeCount);
 }
@@ -541,14 +571,18 @@ function setEpisodeCount(value) {
 
 function renderCountControl() {
   const count = state.episodeCount;
-
-  el.prevCountMinus.disabled = count <= MIN_EPISODE_COUNT;
-  el.prevCountPlus.disabled = count >= MAX_EPISODE_COUNT;
-
-  // 入力中のカーソルが飛ばないよう、違うときだけ書き換える
   const text = count ? String(count) : '';
 
-  if (el.prevCount.value !== text) el.prevCount.value = text;
+  [
+    [el.prevCount, el.prevCountMinus, el.prevCountPlus],
+    [el.bottomCount, el.bottomCountMinus, el.bottomCountPlus],
+  ].forEach(([input, minus, plus]) => {
+    minus.disabled = count <= MIN_EPISODE_COUNT;
+    plus.disabled = count >= MAX_EPISODE_COUNT;
+
+    // 入力中のカーソルが飛ばないよう、違うときだけ書き換える
+    if (input.value !== text) input.value = text;
+  });
 }
 
 // ------------------------------------------------------------
@@ -1320,7 +1354,11 @@ function buildPreviousArticleHtml(articleId, title) {
 
 // ---- 記事IDの一括貼り付け ----
 
-function applyBulkIds() {
+function applyBulkIds(input) {
+  const source = input || el.bulkInput;
+
+  syncBulkInputs(source);
+
   if (!state.rows.length) {
     setBulkStatus('先に回数を入力してください', true);
     return;
@@ -1328,7 +1366,7 @@ function applyBulkIds() {
 
   // スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
   // 区切れないと1行目に全IDが入ってしまうため、どの改行でも分割する
-  const ids = String(el.bulkInput.value || '')
+  const ids = String(source.value || '')
     .split(/[\r\n]+/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -1398,9 +1436,21 @@ function clearArticleIds() {
   setBulkStatus('記事IDを消しました');
 }
 
+// ①と②のどちらから操作しても、両方の表示を揃える。
+// 片方だけ古い結果が残っていると、どちらが本当か分からなくなる
 function setBulkStatus(message, isWarn = false) {
-  el.bulkStatus.textContent = message || '';
-  el.bulkStatus.classList.toggle('warn', Boolean(message) && isWarn);
+  [el.bulkStatus, el.bottomBulkStatus].forEach((node) => {
+    node.textContent = message || '';
+    node.classList.toggle('warn', Boolean(message) && isWarn);
+  });
+}
+
+function syncBulkInputs(source) {
+  const value = String(source.value || '');
+
+  [el.bulkInput, el.bottomBulkInput].forEach((node) => {
+    if (node !== source && node.value !== value) node.value = value;
+  });
 }
 
 // ============================================================

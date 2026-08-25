@@ -165,7 +165,8 @@ const APP_SOURCE =
   state, el,
   MIN_EPISODE_COUNT, MAX_EPISODE_COUNT, DEFAULT_EPISODE_COUNT,
   PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, TAB_NAMES, FINAL_MESSAGE,
-  clampEpisodeCount, parseCountInput, setEpisodeCount, commitPrevCount,
+  clampEpisodeCount, parseCountInput, setEpisodeCount, commitCountInput,
+  syncBulkInputs, setBulkStatus,
   getCategoryCode, toCategoryDigits, hasUnusableCodeChars,
   buildRows, renderPrevTable, updatePrevRow, renderCommon,
   applyBulkIds, clearArticleIds,
@@ -874,6 +875,89 @@ check('すべて消すと退避分も消える', () => {
   const ids = app.state.rows.map((row) => row.articleId);
 
   return ids.join(',') === ',,,' || `→ ${ids.join(',')}`;
+});
+
+check('②タブの回数を変えると①も同じ回数になる', () => {
+  const app = setup({ episodeCount: 8 });
+
+  app.el.bottomCount.value = '14';
+  app.el.bottomCount.dispatch('input');
+
+  return (
+    (app.state.episodeCount === 14 &&
+      app.state.rows.length === 14 &&
+      app.el.prevCount.value === '14') ||
+    `→ ${app.state.episodeCount} / ${app.el.prevCount.value}`
+  );
+});
+
+check('②タブから貼り付けても同じ行に入る', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bottomBulkInput.value = '30001\n30002\n30003';
+  app.el.bottomBulkApply.dispatch('click');
+
+  const ids = app.state.rows.map((row) => row.articleId);
+
+  return ids.join(',') === '30001,30002,30003' || `→ ${ids.join(',')}`;
+});
+
+check('②タブから貼り付けると続きを読むにも効く', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bottomBulkInput.value = '30001\n30002\n30003';
+  app.el.bottomBulkApply.dispatch('click');
+  app.renderBottomTable();
+
+  const row = bottomRow(app, 0);
+
+  return (
+    (row.text.includes('次回：第2回／ID 30002') &&
+      row.button.disabled === false) ||
+    `→ ${row.text}`
+  );
+});
+
+check('貼り付け欄は①②で同じ内容になる', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bulkInput.value = '30001\n30002';
+  app.el.bulkInput.dispatch('input');
+
+  const forward = app.el.bottomBulkInput.value;
+
+  app.el.bottomBulkInput.value = '40001\n40002';
+  app.el.bottomBulkInput.dispatch('input');
+
+  return (
+    (forward === '30001\n30002' && app.el.bulkInput.value === '40001\n40002') ||
+    `→ ${forward} / ${app.el.bulkInput.value}`
+  );
+});
+
+check('反映の結果は①②の両方に出す', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bottomBulkInput.value = '30001\n30002\n30003';
+  app.el.bottomBulkApply.dispatch('click');
+
+  return (
+    (app.el.bulkStatus.textContent === app.el.bottomBulkStatus.textContent &&
+      app.el.bulkStatus.textContent.includes('3件を反映しました')) ||
+    `→ ${app.el.bulkStatus.textContent} / ${app.el.bottomBulkStatus.textContent}`
+  );
+});
+
+check('②タブの「すべて消す」も同じ行を消す', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bottomBulkInput.value = '30001\n30002\n30003';
+  app.el.bottomBulkApply.dispatch('click');
+  app.el.bottomBulkClear.dispatch('click');
+
+  const ids = app.state.rows.map((row) => row.articleId);
+
+  return ids.join(',') === ',,' || `→ ${ids.join(',')}`;
 });
 
 check('一括貼り付けの直後にコピーの可否が更新される', () => {
