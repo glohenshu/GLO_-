@@ -284,6 +284,49 @@ a:focus-visible {
   letter-spacing: .02em;
 }
 
+/* 項目が多い説明は折りたたむ。開いていないときは1行しか場所を取らない。
+   details/summary をそのまま使う（開閉の状態はブラウザが持つ） */
+.hint-toggle { margin: 0 0 18px; }
+
+.hint-toggle > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 10px 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--sub);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  cursor: pointer;
+  list-style: none;
+}
+
+/* 既定の三角は位置が揃わないので消して、自前の印を出す */
+.hint-toggle > summary::-webkit-details-marker { display: none; }
+
+.hint-toggle > summary::before {
+  content: '＋';
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.hint-toggle[open] > summary::before { content: '−'; }
+
+.hint-toggle > summary:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.hint-toggle[open] > summary { margin-bottom: 8px; }
+
+/* 折りたたみの中では下の余白は外側（.hint-toggle）が持つ */
+.hint-toggle .hint-defs { margin-bottom: 0; }
+
 /* 幅が足りないときは見出しと内容を縦に積む */
 @media (max-width: 640px) {
   .hint-defs {
