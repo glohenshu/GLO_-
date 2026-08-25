@@ -619,6 +619,10 @@ a:focus-visible {
   vertical-align: top;
   min-width: 0;
   overflow-wrap: anywhere;
+
+  /* 列幅は固定なので、入りきらない中身が隣の列に重なって出てしまう。
+     セルの外へ出さない */
+  overflow: hidden;
 }
 
 .grid tbody tr:hover { background: var(--accent-soft); }
@@ -638,12 +642,17 @@ a:focus-visible {
 .grid tbody tr.is-group-start td { border-top: 2px solid var(--line); }
 
 /* 列幅は固定。長い記事タイトルで横スクロールを出さない */
-.grid .col-ep { width: 68px; }
+/* 第200回まで入る幅にする。切れると行がどれか分からなくなる */
+.grid .col-ep { width: 82px; }
 .grid .col-date { width: 84px; }
 .grid .col-id { width: 116px; }
 .grid .col-act { width: 152px; }
 
 .grid-bottom .col-act { width: 168px; }
+
+/* 公開予定は「GLO 8/25 21:00」「外部 8/25 21:00」の2行。
+   再掲の日付列（84px）のままだと入りきらず、隣の列に重なる */
+.grid-bottom .col-date { width: 122px; }
 
 /* 公開グループの編集表。設定欄の中に置くので幅を詰める */
 .pub-groups { display: block; }
@@ -688,7 +697,7 @@ a:focus-visible {
 
 /* 前回記事タブ。20回ぶん並べても横スクロールが出ないよう、
    記事タイトル欄に幅を寄せて他の列は必要最小限にする */
-.grid-prev .col-ep { width: 56px; }
+.grid-prev .col-ep { width: 82px; }
 .grid-prev .col-id { width: 88px; }
 .grid-prev .col-title { width: auto; }
 .grid-prev .col-prev { width: 29%; }
@@ -720,7 +729,14 @@ a:focus-visible {
 .col-prev.muted { color: var(--faint); }
 .col-prev.warn { color: var(--warn); font-weight: 600; }
 
-.line { min-width: 0; }
+/* 1行に1つの情報を出す。入りきらないときは折り返さず端で切る。
+   createLine() が全文を title に入れているので、切れてもホバーで読める */
+.line {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .line.sub {
   font-size: 11px;
@@ -989,13 +1005,16 @@ button.copy.strong.template.copied {
 
   #source-select { min-width: 0; width: 100%; }
 
-  .grid .col-ep { width: 58px; }
+  /* 回ラベルと公開予定は詰めすぎると切れる。
+     「第100回」「GLO 8/25 21:00」が入る幅は残す */
+  .grid .col-ep { width: 72px; }
   .grid .col-date { width: 74px; }
+  .grid-bottom .col-date { width: 112px; }
   .grid .col-id { width: 96px; }
   .grid .col-act,
   .grid-bottom .col-act { width: 140px; }
 
-  .grid-prev .col-ep { width: 50px; }
+  .grid-prev .col-ep { width: 72px; }
   .grid-prev .col-id { width: 78px; }
   .grid-prev .col-prev { width: 26%; }
   .grid-prev .col-act { width: 100px; }

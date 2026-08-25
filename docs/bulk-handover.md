@@ -1,6 +1,6 @@
 # 新規一括集中アシスタント 引継ぎメモ
 
-更新日: 2026-08-25（Ver.0.7）
+更新日: 2026-08-25（Ver.0.8）
 対象リポジトリ: `https://github.com/glohenshu/GLO_-.git`
 対象アプリ: `apps/bulk-assistant`
 Vercel Project: `bulk-assistant`（team glo11／Root Directory は `apps/bulk-assistant`）
@@ -272,6 +272,12 @@ C列HTML内の `grxxxx` `gr●●●●` をカテゴリコードへ、`xxxxxxxx
   `renderCountControl()` は両方の入力欄を書き換える。
   貼り付け欄の文字列は `syncBulkInputs()` で、結果表示は `setBulkStatus()` で揃える。
   **別々の入力欄として実装しないこと。** 二重に貼られて回数がずれる
+- **表の中身は必ず `.line` に入れる**（`createLine()`）。`.line` は折り返さず端で省略し、
+  全文は title でホバー表示する。素のテキストを td に直接入れると、
+  列幅が固定なので隣の列に文字が重なって出る
+- **列幅を変えるときは `@media (max-width: 900px)` の方も直す**。
+  そちらが後ろにあるので上書きされる。「第100回」「GLO 8/25 21:00」が
+  入る幅を切らないこと
 - **①②に同じ形で置く部品のCSSはID指定にしない**。
   `#bulk-input` と書くと片方にしか効かず、②だけ枠が素の見た目になる。
   `.bulk textarea` のようにクラスで当てる
