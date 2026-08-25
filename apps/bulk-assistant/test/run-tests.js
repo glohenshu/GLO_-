@@ -1620,6 +1620,18 @@ check('連載情報が無ければ止める（プレースホルダーが残る�
   );
 });
 
+check('連載情報が無くても、判定できた週は出す', () => {
+  const app = setup({ episodeCount: 3, series: null });
+
+  const row = bottomRow(app, 0);
+
+  return (
+    (row.text.includes('2026/8/16〜2026/8/22') &&
+      row.text.includes('連載情報を取得してください')) ||
+    `→ ${row.text}`
+  );
+});
+
 check('C列が空なら止める', () => {
   const app = setup({
     episodeCount: 3,

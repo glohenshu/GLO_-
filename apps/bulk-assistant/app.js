@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.1.3
+   新規一括集中アシスタント Ver.1.4
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -2082,13 +2082,17 @@ function fillSheetCell(cell, row, hit, bottomHtml) {
     return cell;
   }
 
+  // 週は外部配信日だけで決まるので、連載を選ぶ前でも判定できている。
+  // 先に週を出しておき、足りないもの（連載情報）は下に添える
   if (!state.series) {
     cell.appendChild(
-      createLine('連載情報を取得してください', 'warn')
+      createLine(
+        fmtPeriodRange(hit.period),
+        'range',
+        `シートB列：${hit.period.label}\n外部配信日：${fmtYmd(row.extAt)}`
+      )
     );
-    cell.appendChild(
-      createLine('一覧リンクのカテゴリコードと書籍名に使います', 'sub')
-    );
+    cell.appendChild(createLine('連載情報を取得してください', 'sub warn'));
     return cell;
   }
 
