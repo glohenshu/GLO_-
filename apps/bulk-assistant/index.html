@@ -10,7 +10,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.1.1</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.1.2</span></h1>
 
     <!-- 数字だけならカテゴリコード、それ以外は書籍名の部分一致で候補を出す -->
     <div class="search-row">
@@ -110,13 +110,23 @@
         </div>
       </div>
 
-      <div class="bulk">
-        <label for="bulk-input">記事IDを一括貼り付け</label>
-        <textarea id="bulk-input" rows="4" spellcheck="false"
-                  placeholder="30001&#10;30002&#10;30003"></textarea>
+      <div class="bulk bulk-split">
+        <div class="bulk-col">
+          <label for="bulk-input">記事IDを一括貼り付け</label>
+          <textarea id="bulk-input" rows="5" spellcheck="false"
+                    placeholder="30001&#10;30002&#10;30003"></textarea>
+        </div>
+
+        <div class="bulk-col">
+          <label for="bulk-title-input">記事タイトルを一括貼り付け</label>
+          <textarea id="bulk-title-input" rows="5" spellcheck="false"
+                    placeholder="1行に1つ。改行で次の回のタイトルになります"></textarea>
+        </div>
+
         <div class="bulk-actions">
           <button type="button" id="bulk-apply" class="primary small">各回に反映</button>
           <button type="button" id="bulk-clear" class="copy mini">記事IDをすべて消す</button>
+          <button type="button" id="bulk-title-clear" class="copy mini">記事タイトルをすべて消す</button>
           <span id="bulk-status" class="note"></span>
         </div>
       </div>
@@ -171,13 +181,23 @@
         </div>
       </div>
 
-      <div class="bulk">
-        <label for="bottom-bulk-input">記事IDを一括貼り付け</label>
-        <textarea id="bottom-bulk-input" rows="4" spellcheck="false"
-                  placeholder="30001&#10;30002&#10;30003"></textarea>
+      <div class="bulk bulk-split">
+        <div class="bulk-col">
+          <label for="bottom-bulk-input">記事IDを一括貼り付け</label>
+          <textarea id="bottom-bulk-input" rows="5" spellcheck="false"
+                    placeholder="30001&#10;30002&#10;30003"></textarea>
+        </div>
+
+        <div class="bulk-col">
+          <label for="bottom-bulk-title-input">記事タイトルを一括貼り付け</label>
+          <textarea id="bottom-bulk-title-input" rows="5" spellcheck="false"
+                    placeholder="1行に1つ。改行で次の回のタイトルになります"></textarea>
+        </div>
+
         <div class="bulk-actions">
           <button type="button" id="bottom-bulk-apply" class="primary small">各回に反映</button>
           <button type="button" id="bottom-bulk-clear" class="copy mini">記事IDをすべて消す</button>
+          <button type="button" id="bottom-bulk-title-clear" class="copy mini">記事タイトルをすべて消す</button>
           <span id="bottom-bulk-status" class="note"></span>
         </div>
       </div>

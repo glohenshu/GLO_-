@@ -169,7 +169,7 @@ const APP_SOURCE =
   syncBulkInputs, setBulkStatus,
   getCategoryCode, toCategoryDigits, isCodeQuery, renderCandidates,
   buildRows, renderPrevTable, updatePrevRow, renderCommon,
-  applyBulkIds, clearArticleIds,
+  applyBulkValues, clearArticleIds, clearArticleTitles, splitBulkLines,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
   renderBottomTable, resolveNextLink, bottomCopyBlockReason, sheetBlockReason,
   buildNextArticleHtml, buildFinalEpisodeHtml, joinBottomHtml,
@@ -359,6 +359,11 @@ function setCountByInput(app, value) {
 
 function pasteIds(app, text) {
   app.el.bulkInput.value = text;
+  app.el.bulkApply.dispatch('click');
+}
+
+function pasteTitles(app, text) {
+  app.el.bulkTitleInput.value = text;
   app.el.bulkApply.dispatch('click');
 }
 
@@ -926,14 +931,128 @@ check('貼り付けが足りない回は前の入力を残す', () => {
   );
 });
 
-check('空欄で反映を押したら理由を出す', () => {
+check('両方とも空欄で反映を押したら理由を出す', () => {
   const app = loadApp();
 
   pasteIds(app, '   ');
 
   return (
-    app.el.bulkStatus.textContent === '記事IDが入力されていません' ||
+    app.el.bulkStatus.textContent === '記事IDか記事タイトルを入力してください' ||
     `→ ${app.el.bulkStatus.textContent}`
+  );
+});
+
+check('記事タイトルだけでも反映できる', () => {
+  const app = setup({ episodeCount: 3 });
+
+  pasteTitles(app, '一つ目\n二つ目\n三つ目');
+
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return (
+    (titles.join(',') === '一つ目,二つ目,三つ目' &&
+      app.el.bulkStatus.textContent.includes('記事タイトル 3件')) ||
+    `→ ${titles.join(',')} / ${app.el.bulkStatus.textContent}`
+  );
+});
+
+check('記事IDと記事タイトルを同時に流し込める', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bulkInput.value = '30001\n30002\n30003';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目\n三つ目';
+  app.el.bulkApply.dispatch('click');
+
+  const got = app.state.rows.map((row) => `${row.articleId}:${row.articleTitle}`);
+
+  return (
+    (got.join(',') === '30001:一つ目,30002:二つ目,30003:三つ目' &&
+      app.el.bulkStatus.textContent.includes('記事ID 3件・記事タイトル 3件')) ||
+    `→ ${got.join(',')} / ${app.el.bulkStatus.textContent}`
+  );
+});
+
+check('タイトルの一括入力で文字数と表の表示も更新される', () => {
+  const app = setup({ episodeCount: 3 });
+
+  pasteIds(app, '30001\n30002\n30003');
+  pasteTitles(app, 'あいう😀\n二つ目\n三つ目');
+  app.renderBottomTable();
+
+  return (
+    (app.state.rows[0].el.titleCount.textContent === '4文字' &&
+      app.state.rows[0].el.titleInput.value === 'あいう😀' &&
+      textOf(app.state.rows[1].el.prevCell).includes('あいう😀') &&
+      bottomRow(app, 0).text.includes('二つ目')) ||
+    `→ ${app.state.rows[0].el.titleCount.textContent}`
+  );
+});
+
+check('タイトルも回数を超えた分は退避され、増やすと入る', () => {
+  const app = setup({ episodeCount: 2 });
+
+  pasteTitles(app, '一つ目\n二つ目\n三つ目\n四つ目');
+
+  const warned = app.el.bulkStatus.textContent.includes('回数を超えています');
+
+  setCountByInput(app, 4);
+
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return (
+    (warned && titles.join(',') === '一つ目,二つ目,三つ目,四つ目') ||
+    `→ ${warned} / ${titles.join(',')}`
+  );
+});
+
+check('記事タイトルだけを消せる（記事IDは残す）', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bulkInput.value = '30001\n30002\n30003';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目\n三つ目';
+  app.el.bulkApply.dispatch('click');
+
+  app.el.bulkTitleClear.dispatch('click');
+
+  const ids = app.state.rows.map((row) => row.articleId);
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return (
+    (ids.join(',') === '30001,30002,30003' &&
+      titles.join(',') === ',,' &&
+      app.state.rows[0].el.titleCount.textContent === '0文字') ||
+    `→ ${ids.join(',')} / ${titles.join(',')}`
+  );
+});
+
+check('記事タイトルを消すと退避分も消える', () => {
+  const app = setup({ episodeCount: 2 });
+
+  pasteTitles(app, '一つ目\n二つ目\n三つ目\n四つ目');
+  app.el.bulkTitleClear.dispatch('click');
+
+  setCountByInput(app, 4);
+
+  return (
+    app.state.rows.map((row) => row.articleTitle).join(',') === ',,,' ||
+    `→ ${app.state.rows.map((row) => row.articleTitle).join(',')}`
+  );
+});
+
+check('IDとタイトルの貼り付け欄は別々に同期する', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bulkInput.value = '30001';
+  app.el.bulkInput.dispatch('input');
+
+  app.el.bottomBulkTitleInput.value = '一つ目';
+  app.el.bottomBulkTitleInput.dispatch('input');
+
+  return (
+    (app.el.bottomBulkInput.value === '30001' &&
+      app.el.bulkTitleInput.value === '一つ目' &&
+      app.el.bulkInput.value === '30001') ||
+    `→ ${app.el.bottomBulkInput.value} / ${app.el.bulkTitleInput.value}`
   );
 });
 

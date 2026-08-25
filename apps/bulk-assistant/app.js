@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.1.1
+   新規一括集中アシスタント Ver.1.2
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -107,8 +107,10 @@ const el = {
   panelBottom: document.getElementById('panel-bottom'),
 
   bulkInput: document.getElementById('bulk-input'),
+  bulkTitleInput: document.getElementById('bulk-title-input'),
   bulkApply: document.getElementById('bulk-apply'),
   bulkClear: document.getElementById('bulk-clear'),
+  bulkTitleClear: document.getElementById('bulk-title-clear'),
   bulkStatus: document.getElementById('bulk-status'),
 
   prevCount: document.getElementById('prev-count'),
@@ -121,8 +123,10 @@ const el = {
   bottomCountMinus: document.getElementById('bottom-count-minus'),
   bottomCountPlus: document.getElementById('bottom-count-plus'),
   bottomBulkInput: document.getElementById('bottom-bulk-input'),
+  bottomBulkTitleInput: document.getElementById('bottom-bulk-title-input'),
   bottomBulkApply: document.getElementById('bottom-bulk-apply'),
   bottomBulkClear: document.getElementById('bottom-bulk-clear'),
+  bottomBulkTitleClear: document.getElementById('bottom-bulk-title-clear'),
   bottomBulkStatus: document.getElementById('bottom-bulk-status'),
 
   pubGroupBody: document.getElementById('pub-group-body'),
@@ -236,24 +240,43 @@ bindCountControl(el.bottomCount, el.bottomCountMinus, el.bottomCountPlus);
 //
 // こちらも①と②に同じ入口を置く。書き込む先は同じ state.rows
 
-function bindBulkControl(input, apply, clear) {
+function bindBulkControl({ idInput, titleInput, apply, clear, titleClear }) {
   apply.addEventListener('click', () => {
-    applyBulkIds(input);
+    applyBulkValues({ idInput, titleInput });
   });
 
   clear.addEventListener('click', () => {
     clearArticleIds();
   });
 
-  // 片方に貼ったらもう片方にも同じ文字列を映す。
+  titleClear.addEventListener('click', () => {
+    clearArticleTitles();
+  });
+
+  // 片方のタブに貼ったらもう片方にも同じ文字列を映す。
   // 「別々の入力欄」だと思われて二重に貼られるのを避ける
-  input.addEventListener('input', () => {
-    syncBulkInputs(input);
+  [idInput, titleInput].forEach((input) => {
+    input.addEventListener('input', () => {
+      syncBulkInputs(input);
+    });
   });
 }
 
-bindBulkControl(el.bulkInput, el.bulkApply, el.bulkClear);
-bindBulkControl(el.bottomBulkInput, el.bottomBulkApply, el.bottomBulkClear);
+bindBulkControl({
+  idInput: el.bulkInput,
+  titleInput: el.bulkTitleInput,
+  apply: el.bulkApply,
+  clear: el.bulkClear,
+  titleClear: el.bulkTitleClear,
+});
+
+bindBulkControl({
+  idInput: el.bottomBulkInput,
+  titleInput: el.bottomBulkTitleInput,
+  apply: el.bottomBulkApply,
+  clear: el.bottomBulkClear,
+  titleClear: el.bottomBulkTitleClear,
+});
 
 // 記事ID・記事タイトルは行ごとに個別入力もできる。
 // 入力した行の値は「次の行の前回記事」にだけ効くので、そこだけ更新する。
@@ -1582,61 +1605,69 @@ function buildPreviousArticleHtml(articleId, title) {
 
 // ---- 記事IDの一括貼り付け ----
 
-function applyBulkIds(input) {
-  const source = input || el.bulkInput;
+// スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
+// 区切れないと1行目に全部が入ってしまうため、どの改行でも分割する。
+//
+// 空行は落とす。記事IDと記事タイトルで扱いを変えると、
+// どちらかに空行が混ざったときに2つの列がずれて対応しなくなる
+function splitBulkLines(value) {
+  return String(value || '')
+    .split(/[\r\n]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
 
-  syncBulkInputs(source);
+// 記事IDと記事タイトルをまとめて各回へ流し込む。
+// 入力欄は①②に2つずつあるが、中身は同期しているのでどれを読んでも同じ
+function applyBulkValues(source) {
+  // 押したタブの入力欄を正として、もう片方へ映してから使う。
+  // 貼り付けが input イベントを伴わない経路でも取りこぼさない
+  const idInput = (source && source.idInput) || el.bulkInput;
+  const titleInput = (source && source.titleInput) || el.bulkTitleInput;
+
+  syncBulkInputs(idInput);
+  syncBulkInputs(titleInput);
 
   if (!state.rows.length) {
     setBulkStatus('先に回数を入力してください', true);
     return;
   }
 
-  // スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
-  // 区切れないと1行目に全IDが入ってしまうため、どの改行でも分割する
-  const ids = String(source.value || '')
-    .split(/[\r\n]+/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+  const ids = splitBulkLines(idInput.value);
+  const titles = splitBulkLines(titleInput.value);
 
-  if (!ids.length) {
-    setBulkStatus('記事IDが入力されていません', true);
+  if (!ids.length && !titles.length) {
+    setBulkStatus('記事IDか記事タイトルを入力してください', true);
     return;
   }
 
-  // 行数を超えた分も回数ごとに退避しておく。
-  // 回数を増やしたときに貼り直さずに済む
-  ids.forEach((id, index) => {
-    const number = index + 1;
+  if (ids.length) applyBulkColumn(ids, 'articleId', state.idStash, 'input');
 
-    if (number > MAX_EPISODE_COUNT) return;
-
-    state.idStash.set(number, id);
-
-    const row = state.rows[index];
-
-    if (!row) return;
-
-    row.articleId = id;
-
-    if (row.el) row.el.input.value = id;
-  });
+  if (titles.length) {
+    applyBulkColumn(titles, 'articleTitle', state.titleStash, 'titleInput');
+    state.rows.forEach((row) => updateTitleCount(row));
+  }
 
   state.rows.forEach((_, index) => updatePrevRow(index));
   markBottomDirty();
 
-  const applied = Math.min(ids.length, state.rows.length);
+  const total = state.rows.length;
+  const longest = Math.max(ids.length, titles.length);
 
-  let message = `${applied}件を反映しました`;
+  const parts = [];
 
-  if (ids.length > state.rows.length) {
+  if (ids.length) parts.push(`記事ID ${Math.min(ids.length, total)}件`);
+  if (titles.length) parts.push(`記事タイトル ${Math.min(titles.length, total)}件`);
+
+  let message = `${parts.join('・')}を反映しました`;
+
+  if (longest > total) {
     message +=
-      `（${ids.length - state.rows.length}件は回数を超えています。` +
-      `回数を増やすと反映されます）`;
-  } else if (ids.length < state.rows.length) {
+      `（${longest - total}件は回数を超えています。回数を増やすと反映されます）`;
+  } else if (longest < total) {
     // 貼り付けた件数より後ろの回は書き換えない。
-    // 前に入れたIDが残っていることがあるので「未入力」と決めつけない
-    const rest = state.rows.slice(ids.length);
+    // 前に入れた値が残っていることがあるので「未入力」と決めつけない
+    const rest = state.rows.slice(longest);
     const kept = rest.filter((row) => String(row.articleId || '').trim()).length;
 
     message += kept
@@ -1644,24 +1675,60 @@ function applyBulkIds(input) {
       : `（残り${rest.length}回は未入力）`;
   }
 
-  setBulkStatus(message, ids.length > state.rows.length);
+  setBulkStatus(message, longest > total);
+}
+
+// 行数を超えた分も回数ごとに退避しておく。
+// 回数を増やしたときに貼り直さずに済む
+function applyBulkColumn(values, field, stash, refKey) {
+  values.forEach((value, index) => {
+    const number = index + 1;
+
+    if (number > MAX_EPISODE_COUNT) return;
+
+    stash.set(number, value);
+
+    const row = state.rows[index];
+
+    if (!row) return;
+
+    row[field] = value;
+
+    // ①②の両方の入力欄に映す
+    [row.el, row.elBottom].forEach((refs) => {
+      if (refs && refs[refKey]) refs[refKey].value = value;
+    });
+  });
 }
 
 function clearArticleIds() {
-  // 退避してある分（今は表示していない回）も一緒に消す。
-  // 消したつもりのIDが回数を戻したときに復活しないようにする
-  state.idStash.clear();
+  clearBulkColumn('articleId', state.idStash, 'input');
+
+  setBulkStatus('記事IDを消しました');
+}
+
+function clearArticleTitles() {
+  clearBulkColumn('articleTitle', state.titleStash, 'titleInput');
+  state.rows.forEach((row) => updateTitleCount(row));
+
+  setBulkStatus('記事タイトルを消しました');
+}
+
+// 退避してある分（今は表示していない回）も一緒に消す。
+// 消したつもりの値が回数を戻したときに復活しないようにする
+function clearBulkColumn(field, stash, refKey) {
+  stash.clear();
 
   state.rows.forEach((row) => {
-    row.articleId = '';
+    row[field] = '';
 
-    if (row.el) row.el.input.value = '';
+    [row.el, row.elBottom].forEach((refs) => {
+      if (refs && refs[refKey]) refs[refKey].value = '';
+    });
   });
 
   state.rows.forEach((_, index) => updatePrevRow(index));
   markBottomDirty();
-
-  setBulkStatus('記事IDを消しました');
 }
 
 // ①と②のどちらから操作しても、両方の表示を揃える。
@@ -1673,10 +1740,16 @@ function setBulkStatus(message, isWarn = false) {
   });
 }
 
+// 記事IDと記事タイトルはそれぞれ①②に1つずつある。
+// 同じ役割の欄どうしだけを同期する
 function syncBulkInputs(source) {
   const value = String(source.value || '');
 
-  [el.bulkInput, el.bottomBulkInput].forEach((node) => {
+  const group = [el.bulkInput, el.bottomBulkInput].includes(source)
+    ? [el.bulkInput, el.bottomBulkInput]
+    : [el.bulkTitleInput, el.bottomBulkTitleInput];
+
+  group.forEach((node) => {
     if (node !== source && node.value !== value) node.value = value;
   });
 }

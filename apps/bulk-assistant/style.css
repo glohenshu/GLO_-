@@ -679,6 +679,21 @@ a:focus-visible {
   margin-bottom: 18px;
 }
 
+/* 記事IDと記事タイトルを左右に並べる。
+   1行＝1回で対応するので、横に並べたほうが行数を見比べられる */
+.bulk-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 16px;
+}
+
+.bulk-split .bulk-actions { grid-column: 1 / -1; }
+
+/* 幅が足りないときは縦に積む */
+@media (max-width: 760px) {
+  .bulk-split { grid-template-columns: minmax(0, 1fr); }
+}
+
 .bulk label {
   display: block;
   font-size: 10px;

@@ -1,6 +1,6 @@
 # 新規一括集中アシスタント 引継ぎメモ
 
-更新日: 2026-08-25（Ver.1.1）
+更新日: 2026-08-25（Ver.1.2）
 対象リポジトリ: `https://github.com/glohenshu/GLO_-.git`
 対象アプリ: `apps/bulk-assistant`
 Vercel Project: `bulk-assistant`（team glo11／Root Directory は `apps/bulk-assistant`）
@@ -134,7 +134,9 @@ GASのデプロイは「アクセスできるユーザー＝**全員**」必須�
 - 回数はタブ内の「回数」で決める（`#prev-count`）。1〜200回。全角数字も受ける
 - 開いた時点で**10行**できている（`DEFAULT_EPISODE_COUNT`）。一括集中は10回前後が多いため
 - **全回とも `第N回`**。一番最後の回だけ `row.isFinal` が立ち、`tr.is-final` が付く
-- 記事IDは個別入力と一括貼り付け（1行1ID・空行無視・CRLF可）に対応
+- 記事ID・記事タイトルとも個別入力と一括貼り付けに対応。貼り付け欄は左右2列で、
+  左が記事ID・右が記事タイトル。**1行＝1回**で、改行で次の回になる。
+  **空行は両方とも落とす**（片方だけ残すと2列がずれて対応しなくなる）。CRLF可
 - 記事タイトルは任意入力。**プレースホルダーは置かない**（入力済みに見えるため）
 - タイトル欄の直下に `18文字` のように `Array.from(value).length` で文字数を出す
 
@@ -313,7 +315,11 @@ C列HTML内の `grxxxx` `gr●●●●` をカテゴリコードへ、`xxxxxxxx
 - 記事IDが未入力の回はコピーボタンを無効にする。誤ったリンクを貼らせない
 - タイトルは `escapeHtml()` を通す（`&` `<` `>` `"`）
 - **回数と記事IDの入口は①②に2つあるが、データは1つ**。
-  回数は `state.episodeCount`、記事IDは `state.rows` を両方が見ている。
+  回数は `state.episodeCount`、記事ID・記事タイトルは `state.rows` を両方が見ている。
+  貼り付け欄は4つ（①②×ID／タイトル）あるが、`syncBulkInputs()` が
+  **同じ役割の欄どうしだけ**を同期する。IDとタイトルを混ぜて同期しないこと。
+  「各回に反映」は押したタブの欄を正として読む（貼り付けが input イベントを
+  伴わない経路でも取りこぼさないため）
   `bindCountControl()` / `bindBulkControl()` で同じ処理に配線し、
   `renderCountControl()` は両方の入力欄を書き換える。
   貼り付け欄の文字列は `syncBulkInputs()` で、結果表示は `setBulkStatus()` で揃える。
@@ -364,7 +370,7 @@ C列HTML内の `grxxxx` `gr●●●●` をカテゴリコードへ、`xxxxxxxx
 node apps/bulk-assistant/test/run-tests.js
 ```
 
-DOMをスタブして `app.js` をそのままNodeで動かす。105件。
+DOMをスタブして `app.js` をそのままNodeで動かす。112件。
 日付は 2026/08/19 に固定してある（B列に年が無く実行日から推定するため）。
 
 カバー範囲：カテゴリコード入力／回数入力（全角・上下限・退避と復活）／一括貼り付け／
