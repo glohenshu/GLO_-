@@ -1,0 +1,968 @@
+/* ============================================================
+   再掲連載作成アシスタント Ver.0.4 ── style.css
+
+   既存「新連載作成アシスタント」と同じ深緑系の業務ツールUI。
+
+   共通情報（カテゴリコード / 書籍タイトル / 参照元連載）
+     ↓
+   ①前回記事 ／ ②記事下 のタブ
+     ↓
+   一覧（表）
+
+   20件並んでも縦に伸びすぎないよう、1回＝表の1行にする。
+   横スクロールを出さないため、表は table-layout: fixed で列幅を固定し、
+   長い文字列は省略記号で丸める。
+   ============================================================ */
+
+:root {
+  /* 地色は白いカードとの境目が影に頼らず立つよう、わずかに緑寄りにする */
+  --bg: #EAEEE8;
+  --panel: #FFFFFF;
+  --panel-2: #F3F6F1;
+  --ink: #141810;
+  --sub: #566053;             /* 本文グレー。読めるコントラストを優先する */
+  --faint: #6E786C;
+  --line: #DBE1D6;
+  --line-soft: #EAEEE6;
+  --accent: #1B6B52;          /* GLOツールの基調色：深緑。変えない */
+  --accent-ink: #12493A;
+  --accent-soft: #E1EDE6;
+  --warn: #9C4423;
+  --warn-soft: #FBEDE6;
+  --code-bg: #F4F6F3;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* 1pxの硬い影ではなく、広く薄い影。カードが板ではなく紙に見える */
+  --shadow: 0 1px 1px rgba(20, 34, 27, .04), 0 6px 16px -10px rgba(20, 34, 27, .18);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================
+   上部：検索
+   ============================================================ */
+
+/* 行が20件並ぶので、検索行だけを固定して常に呼び出せるようにする */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 13px 20px 14px;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+h1 .ver {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin-left: 8px;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 9px;
+  flex-wrap: wrap;
+}
+
+.search-row label {
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+
+/* gr は入力欄の一部として固定表示する。打つのは数字だけ */
+.code-field {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 0 12px;
+}
+
+/* 入力欄の枠は input ではなくこちらに出す。キーボード操作でも位置が分かるようにする */
+.code-field:focus-within {
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.code-prefix {
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: .1em;
+  color: var(--faint);
+  user-select: none;
+}
+
+#code-input {
+  width: 92px;
+  padding: 7px 0 7px 1px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .1em;
+  color: var(--ink);
+}
+
+#code-input:focus { outline: none; }
+
+/* 枠は .code-field 側に出す */
+#code-input:focus-visible { outline: none; }
+
+.fetch-status { font-size: 12px; color: var(--sub); }
+.fetch-status.error { color: var(--warn); }
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ============================================================
+   本文
+   ============================================================ */
+
+.content {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.block + .block { margin-top: 20px; }
+
+.hint {
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.75;
+  margin: 10px 0 4px;
+  max-width: 76ch;
+}
+
+/* 長い説明を1段落に詰めると読みにくいので、
+   「何の話か」と「その内容」を左右に分けて並べる。
+   下の表と同じ幅まで使って、1項目が折り返さずに収まるようにする */
+.hint-defs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 18px;
+  max-width: none;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: transparent;
+}
+
+.hint-defs dt {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.hint-defs dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.hint-defs code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .02em;
+}
+
+/* 幅が足りないときは見出しと内容を縦に積む */
+@media (max-width: 640px) {
+  .hint-defs {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .hint-defs dt { margin-top: 8px; }
+  .hint-defs dt:first-child { margin-top: 0; }
+}
+
+/* ---- 次回更新日タブの設定行 ---- */
+
+.next-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin-bottom: 16px;
+}
+
+.next-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.next-field label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+#next-time {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+#next-time:focus { border-color: var(--accent); }
+
+#final-message {
+  min-width: 380px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#final-message:focus { border-color: var(--accent); }
+
+.note { font-size: 11.5px; color: var(--faint); }
+.note.warn { color: var(--warn); font-weight: 600; }
+
+/* ---- 警告 ---- */
+
+.warnings {
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 9px 15px 10px;
+  margin-bottom: 16px;
+  color: var(--warn);
+}
+
+.warnings-head {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+.warnings ul { margin: 3px 0 0; padding-left: 1.2em; }
+
+.warnings li { font-size: 12.5px; line-height: 1.7; }
+
+/* ============================================================
+   共通エリア
+   ============================================================ */
+
+.common-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* 帯ごとに役割を分ける。操作する帯だけ地色を変えて、触る場所を分かるようにする */
+.common-zone { padding: 16px 20px; }
+.common-zone + .common-zone { border-top: 1px solid var(--line-soft); }
+.common-zone-work { background: var(--panel-2); }
+.common-zone-foot { padding: 10px 20px 11px; }
+
+/* いま何の連載を作っているのかを最初に目に入れる */
+.series-title {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: .02em;
+  margin-bottom: 7px;
+}
+
+/* 書籍タイトル以外は従属情報。1行にまとめて主役を邪魔しない */
+.common-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 20px;
+}
+
+.common-item {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.common-item dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.common-item dd {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  color: var(--sub);
+  min-width: 0;
+}
+
+.common-item dd.warn { color: var(--warn); }
+
+.mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+}
+
+/* 長い書籍タイトルで横に広がらないようにする */
+.ellip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 参照元選択 ---- */
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.source-row label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+}
+
+#source-select {
+  min-width: 340px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#source-select:focus { border-color: var(--accent); }
+
+#source-select:disabled {
+  background: var(--code-bg);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.source-status {
+  font-size: 11.5px;
+  color: var(--faint);
+  letter-spacing: .04em;
+}
+
+.source-status.warn { color: var(--warn); font-weight: 600; }
+
+/* ---- 再掲連載回数 ---- */
+
+.count-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+}
+
+.count-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+}
+
+.count-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.count-control .step {
+  appearance: none;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--sub);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.count-control .step:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.count-control .step:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.count-input {
+  width: 56px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  text-align: center;
+}
+
+.count-input:focus { border-color: var(--accent); }
+
+.count-input:disabled {
+  background: var(--code-bg);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.count-unit {
+  font-size: 12px;
+  color: var(--sub);
+}
+
+/* ---- 取得状況 ---- */
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ext-link {
+  font-size: 11.5px;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+
+.ext-link:hover { border-bottom-color: var(--accent); }
+
+/* ============================================================
+   タブ
+   ============================================================ */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  appearance: none;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 8px 18px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--sub);
+  margin-bottom: -1px;
+}
+
+.tab:hover { color: var(--accent); }
+
+.tab.is-active {
+  background: var(--panel);
+  border-color: var(--line);
+  border-bottom: 1px solid var(--panel);
+  color: var(--accent-ink);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.tabpanel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 16px 18px 20px;
+}
+
+/* ============================================================
+   一括貼り付け
+   ============================================================ */
+
+.bulk {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+
+.bulk label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin-bottom: 5px;
+}
+
+#bulk-input {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+#bulk-input:focus { border-color: var(--accent); }
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+}
+
+/* ============================================================
+   一覧（表）
+   ============================================================ */
+
+.grid {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.grid th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--sub);
+  text-align: left;
+  padding: 0 10px 7px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.grid td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+  vertical-align: top;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.grid tbody tr:hover { background: var(--accent-soft); }
+
+/* 回ラベル列に地色を敷いて「行の始まり」を作る。
+   最終回と要確認の回は左のバーで、離れて見ても区別が付くようにする */
+.grid tbody .col-ep {
+  background: var(--panel-2);
+  border-left: 2px solid transparent;
+}
+
+.grid tbody tr.is-final .col-ep { border-left-color: var(--accent); }
+.grid tbody tr.is-flag .col-ep { border-left-color: var(--warn); }
+.grid tbody tr:hover .col-ep { background: var(--accent-soft); }
+
+/* 列幅は固定。長い記事タイトルで横スクロールを出さない */
+.grid .col-ep { width: 68px; }
+.grid .col-date { width: 84px; }
+.grid .col-id { width: 116px; }
+.grid .col-act { width: 152px; }
+
+.grid-bottom .col-act { width: 168px; }
+
+/* 次回更新日タブ。列が少ないので日付側に幅を寄せる */
+.grid-next .col-ep { width: 74px; }
+.grid-next .col-date { width: 100px; }
+.grid-next .col-act { width: 132px; }
+.grid-bottom .col-next { width: 34%; }
+
+/* 前回記事タブ。20回ぶん並べても横スクロールが出ないよう、
+   記事タイトル欄に幅を寄せて他の列は必要最小限にする */
+.grid-prev .col-ep { width: 56px; }
+.grid-prev .col-id { width: 88px; }
+.grid-prev .col-title { width: auto; }
+.grid-prev .col-prev { width: 29%; }
+.grid-prev .col-act { width: 118px; }
+
+/* 入力欄と文字数で元々背が高いので、記事下タブより少し詰める */
+.grid-prev td { padding-top: 6px; padding-bottom: 6px; }
+
+.col-ep {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.col-date {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.col-date.warn { color: var(--warn); font-weight: 600; }
+
+.col-act { text-align: right; }
+
+.col-prev.muted { color: var(--faint); }
+.col-prev.warn { color: var(--warn); font-weight: 600; }
+
+.line { min-width: 0; }
+
+.line.sub {
+  font-size: 11px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.line.warn { color: var(--warn); font-weight: 600; }
+
+.line.faint { color: var(--faint); }
+
+.line.final { color: var(--accent); font-weight: 600; }
+
+/* 参照元の回とIDは確認用。記事タイトルより目立たせない */
+.line.mono-id {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+
+/* 記事下の対象期間：2026/8/23〜2026/8/29
+   B列の原文と誘導先は title 属性（ホバー）で確認する */
+.line.range {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* 参照元の記事をその場で開いて確認できるようにする */
+.line a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line);
+}
+
+.line a:hover {
+  color: var(--accent);
+  border-bottom-color: currentColor;
+}
+
+/* 記事タイトルに原稿由来の記号が残っているときの目印。
+   自動では直さないので、実記事を開いて確認してもらう */
+.line.risky {
+  color: var(--warn);
+  font-weight: 600;
+  cursor: help;
+}
+
+.line.ellip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  color: var(--faint);
+  font-size: 12px;
+  padding: 14px 8px;
+  text-align: center;
+}
+
+/* 今回の記事ID */
+.id-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+
+.id-input:focus { border-color: var(--accent); background: var(--panel); }
+
+/* 今回の記事タイトル。次の回の【前回の記事を読む】に使う */
+.title-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.title-input:focus { border-color: var(--accent); background: var(--panel); }
+
+/* 入力の目安。上限は無いので控えめに出す */
+.title-count {
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   ボタン
+   ============================================================ */
+
+button.primary, button.copy {
+  appearance: none;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-family: inherit;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  letter-spacing: .06em;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover { background: var(--accent-ink); }
+button.primary:disabled { opacity: .45; cursor: default; }
+button.primary.small { padding: 5px 14px; font-size: 12px; }
+
+button.copy {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--sub);
+  font-weight: 600;
+}
+
+button.copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+button.copy:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* 一度コピーした行。上から順に処理するので、どこまで進んだかを残す */
+button.copy.copied {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.copy.mini { padding: 5px 12px; font-size: 11px; border-radius: var(--radius-sm); }
+
+/* 「HTMLコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.prev-copy {
+  min-width: 94px;
+  white-space: nowrap;
+}
+
+/* 一覧を見ただけでコピー済みの回が分かるようにする */
+button.copy.prev-copy.copied { font-weight: 700; }
+
+/* 「HTMLコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.next-copy {
+  min-width: 106px;
+  white-space: nowrap;
+}
+
+/* 「記事下まとめてコピー」と「コピー済み ✓」で幅が変わらないようにする */
+button.copy.strong {
+  min-width: 152px;
+  white-space: nowrap;
+}
+
+button.copy:disabled {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--faint);
+  cursor: default;
+}
+
+button.copy:disabled:hover {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--faint);
+}
+
+/* 記事下まとめは各行の主操作。押していないうちは白地にして、
+   コピー済みの1件だけが塗りつぶしで際立つようにする */
+button.copy.strong {
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+button.copy.strong:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* いまクリップボードに入っている1件。塗りつぶして他とはっきり差を付ける。
+   .strong より後ろに置かないと背景を上書きされる */
+button.copy.strong.copied {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* 参照元に該当回が無い行のテンプレ。
+   そのままでは貼れない（リンク先を差し替える）ことを見た目でも示す */
+button.copy.strong.template {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+button.copy.strong.template:hover {
+  background: var(--panel-2);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+button.copy.strong.template.copied {
+  background: var(--warn);
+  border-color: var(--warn);
+  border-style: solid;
+  color: #fff;
+}
+
+/* ============================================================
+   トースト
+   ============================================================ */
+
+.toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translate(-50%, 14px);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  letter-spacing: .06em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  z-index: 50;
+}
+
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, .toast { transition: none !important; }
+}
+
+/* ============================================================
+   狭い画面
+   ============================================================ */
+
+@media (max-width: 900px) {
+  .common-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+  #source-select { min-width: 0; width: 100%; }
+
+  .grid .col-ep { width: 58px; }
+  .grid .col-date { width: 74px; }
+  .grid .col-id { width: 96px; }
+  .grid .col-act,
+  .grid-bottom .col-act { width: 140px; }
+
+  .grid-prev .col-ep { width: 50px; }
+  .grid-prev .col-id { width: 78px; }
+  .grid-prev .col-prev { width: 26%; }
+  .grid-prev .col-act { width: 100px; }
+
+  button.copy.prev-copy { min-width: 84px; }
+
+  .grid th, .grid td { padding-left: 5px; padding-right: 5px; }
+
+  button.copy.mini { padding: 3px 7px; font-size: 10.5px; }
+}
