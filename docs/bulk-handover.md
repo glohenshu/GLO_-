@@ -1,6 +1,6 @@
 # 新規一括集中アシスタント 引継ぎメモ
 
-更新日: 2026-08-25（Ver.0.6）
+更新日: 2026-08-25（Ver.0.7）
 対象リポジトリ: `https://github.com/glohenshu/GLO_-.git`
 対象アプリ: `apps/bulk-assistant`
 Vercel Project: `bulk-assistant`（team glo11／Root Directory は `apps/bulk-assistant`）
@@ -98,7 +98,7 @@ GASのデプロイは「アクセスできるユーザー＝**全員**」必須�
 
 - **カテゴリコードを取得していなくても使える**
 - 回数はタブ内の「回数」で決める（`#prev-count`）。1〜200回。全角数字も受ける
-- 開いた時点で8行できている（`DEFAULT_EPISODE_COUNT`）
+- 開いた時点で**10行**できている（`DEFAULT_EPISODE_COUNT`）。一括集中は10回前後が多いため
 - **全回とも `第N回`**。一番最後の回だけ `row.isFinal` が立ち、`tr.is-final` が付く
 - 記事IDは個別入力と一括貼り付け（1行1ID・空行無視・CRLF可）に対応
 - 記事タイトルは任意入力。**プレースホルダーは置かない**（入力済みに見えるため）
@@ -272,6 +272,9 @@ C列HTML内の `grxxxx` `gr●●●●` をカテゴリコードへ、`xxxxxxxx
   `renderCountControl()` は両方の入力欄を書き換える。
   貼り付け欄の文字列は `syncBulkInputs()` で、結果表示は `setBulkStatus()` で揃える。
   **別々の入力欄として実装しないこと。** 二重に貼られて回数がずれる
+- **①②に同じ形で置く部品のCSSはID指定にしない**。
+  `#bulk-input` と書くと片方にしか効かず、②だけ枠が素の見た目になる。
+  `.bulk textarea` のようにクラスで当てる
 - **カテゴリコードを取得しても①の入力は消さない**。
   消すのは**別のカテゴリコードに切り替えたときだけ**（`clearAllInputs()`）。
   先に回数と記事IDを入れてから取得する使い方があるため

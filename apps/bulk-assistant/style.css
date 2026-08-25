@@ -565,7 +565,9 @@ a:focus-visible {
   margin-bottom: 5px;
 }
 
-#bulk-input {
+/* ID指定にすると①②のどちらか片方にしか効かない。
+   一括貼り付けは①②の両方に同じ形で置くのでクラスで当てる */
+.bulk textarea {
   width: 100%;
   resize: vertical;
   padding: 7px 10px;
@@ -578,7 +580,7 @@ a:focus-visible {
   line-height: 1.6;
 }
 
-#bulk-input:focus { border-color: var(--accent); }
+.bulk textarea:focus { border-color: var(--accent); }
 
 .bulk-actions {
   display: flex;
