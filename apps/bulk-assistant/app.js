@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.8
+   新規一括集中アシスタント Ver.0.9
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -48,6 +48,10 @@ const state = {
   sheetRows: null,
   sheetStatus: 'error',
   sheetMessage: '',
+
+  // 一度でも取得を試したか。
+  // 「まだ取得していない」と「取得に失敗した」を画面で書き分けるために持つ
+  sheetFetched: false,
 
   // 年を推定済みの行。sheetRows が変わったときだけ作り直す
   parsedSheetRows: null,
@@ -253,25 +257,11 @@ bindBulkControl(el.bottomBulkInput, el.bottomBulkApply, el.bottomBulkClear);
 // ②の「この話の続きを読む」は逆に1つ前の行に効くので、
 // そちらは行単位ではなく②全体を作り直す
 el.prevBody.addEventListener('input', (event) => {
-  const input = event.target.closest('input.id-input, input.title-input');
+  handleRowInput(event.target);
+});
 
-  if (!input) return;
-
-  const index = Number(input.dataset.index);
-
-  if (!Number.isInteger(index) || !state.rows[index]) return;
-
-  const row = state.rows[index];
-
-  if (input.classList.contains('id-input')) {
-    row.articleId = input.value;
-  } else {
-    row.articleTitle = input.value;
-    updateTitleCount(row);
-  }
-
-  updatePrevRow(index + 1);
-  markBottomDirty();
+el.bottomBody.addEventListener('input', (event) => {
+  handleRowInput(event.target);
 });
 
 // ---- 公開グループ ----
@@ -379,6 +369,7 @@ async function fetchSeriesData() {
     state.sheetRows =
       sheet.status === 'ok' && Array.isArray(sheet.rows) ? sheet.rows : null;
     state.sheetMessage = String(sheet.message || '');
+    state.sheetFetched = true;
 
     // 行が入れ替わったので、年の推定はやり直させる
     state.parsedSheetRows = null;
@@ -623,7 +614,9 @@ function buildRows() {
       gloAt: null,
       extAt: null,
 
+      // ①と②それぞれの表の要素。同じ行を2か所に出す
       el: null,
+      elBottom: null,
     });
   }
 
@@ -1019,6 +1012,17 @@ function fmtPlannedShort(date) {
   );
 }
 
+// 日付だけ：8/20（月）
+// 曜日を出すのは、毎日更新と一括のどちらなのかが並びで分かるようにするため
+function fmtMdShort(date) {
+  return (
+    `${date.getMonth() + 1}/${date.getDate()}` +
+    `（${WEEKDAY_LABELS[date.getDay()]}）`
+  );
+}
+
+const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+
 // 確認用：2026/08/20
 function fmtYmd(date) {
   return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(
@@ -1136,17 +1140,7 @@ function renderPrevTable() {
     const idCell = document.createElement('td');
     idCell.className = 'col-id';
 
-    const input = document.createElement('input');
-
-    input.type = 'text';
-    input.className = 'id-input mono';
-    input.inputMode = 'numeric';
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    input.placeholder = '30001';
-    input.value = row.articleId;
-    input.dataset.index = String(index);
-    input.setAttribute('aria-label', `${row.label}の今回の記事ID`);
+    const input = createRowIdInput(row, index, 'prev');
 
     idCell.appendChild(input);
     tr.appendChild(idCell);
@@ -1156,16 +1150,7 @@ function renderPrevTable() {
     const titleCell = document.createElement('td');
     titleCell.className = 'col-title';
 
-    const titleInput = document.createElement('input');
-
-    titleInput.type = 'text';
-    titleInput.className = 'title-input';
-    titleInput.autocomplete = 'off';
-    titleInput.spellcheck = false;
-    // 例文をプレースホルダーに置くと入力済みに見えるため、空欄のままにする
-    titleInput.value = row.articleTitle;
-    titleInput.dataset.index = String(index);
-    titleInput.setAttribute('aria-label', `${row.label}の今回の記事タイトル`);
+    const titleInput = createRowTitleInput(row, index, 'prev');
 
     const titleCount = document.createElement('div');
     titleCount.className = 'title-count';
@@ -1200,14 +1185,95 @@ function renderPrevTable() {
   state.rows.forEach((_, index) => updatePrevRow(index));
 }
 
+// 記事ID・記事タイトルの入力欄は①②で同じものを出す。
+// panel で「どちらの表の入力欄か」を持たせ、片方に打ったらもう片方にも映す
+function createRowIdInput(row, index, panel) {
+  const input = document.createElement('input');
+
+  input.type = 'text';
+  input.className = 'id-input mono';
+  input.inputMode = 'numeric';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = '30001';
+  input.value = row.articleId;
+  input.dataset.index = String(index);
+  input.dataset.panel = panel;
+  input.setAttribute('aria-label', `${row.label}の今回の記事ID`);
+
+  return input;
+}
+
+function createRowTitleInput(row, index, panel) {
+  const input = document.createElement('input');
+
+  input.type = 'text';
+  input.className = 'title-input';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  // 例文をプレースホルダーに置くと入力済みに見えるため、空欄のままにする
+  input.value = row.articleTitle;
+  input.dataset.index = String(index);
+  input.dataset.panel = panel;
+  input.setAttribute('aria-label', `${row.label}の今回の記事タイトル`);
+
+  return input;
+}
+
 // 絵文字や結合文字を1文字として数えたいので Array.from() で数える。
 // 文字数の上限は設けず、入力の目安として出すだけ
 function updateTitleCount(row) {
-  if (!row || !row.el || !row.el.titleCount) return;
+  if (!row) return;
 
-  const length = Array.from(String(row.articleTitle || '')).length;
+  const text = `${Array.from(String(row.articleTitle || '')).length}文字`;
 
-  row.el.titleCount.textContent = `${length}文字`;
+  [row.el, row.elBottom].forEach((refs) => {
+    if (refs && refs.titleCount) refs.titleCount.textContent = text;
+  });
+}
+
+// 行の入力を1か所で受ける。
+// ①と②のどちらで打っても、値・文字数・もう片方の入力欄・
+// 影響する行の表示をまとめて更新する。
+//
+//   ①の「前回記事」は1つ後ろの行に効く
+//   ②の「この話の続きを読む」は1つ前の行に効く
+function handleRowInput(source) {
+  const input = source.closest('input.id-input, input.title-input');
+
+  if (!input) return;
+
+  const index = Number(input.dataset.index);
+  const row = state.rows[index];
+
+  if (!Number.isInteger(index) || !row) return;
+
+  const isId = input.classList.contains('id-input');
+  const value = input.value;
+
+  if (isId) row.articleId = value;
+  else row.articleTitle = value;
+
+  // もう片方の表の入力欄にも映す。打っている側は触らない（カーソルが飛ぶ）
+  [row.el, row.elBottom].forEach((refs) => {
+    if (!refs) return;
+
+    const other = isId ? refs.input : refs.titleInput;
+
+    if (other && other !== input && other.value !== value) other.value = value;
+  });
+
+  if (!isId) updateTitleCount(row);
+
+  updatePrevRow(index + 1);
+
+  // ②を開いていないときは作り直さず、開いたときにまとめて描き直す
+  if (state.activeTab === 'bottom') {
+    updateBottomRow(index - 1);
+    updateBottomRow(index);
+  } else {
+    state.bottomDirty = true;
+  }
 }
 
 // コピー内容は押した時点で組み立てる。
@@ -1469,6 +1535,9 @@ function syncBulkInputs(source) {
 // 画面のプルダウンで選ぶ。選んだ週を全回に使う。
 // ============================================================
 
+// 列数。空行のcolspanと列構成を1か所で持つ
+const BOTTOM_COLUMNS = 8;
+
 function renderBottomTable() {
   el.bottomBody.textContent = '';
   state.copyButtons = [];
@@ -1476,56 +1545,124 @@ function renderBottomTable() {
 
   if (!state.rows.length) {
     el.bottomBody.appendChild(
-      createEmptyRow(5, '①タブで回数を入れると作業行を作成します')
+      createEmptyRow(BOTTOM_COLUMNS, '回数を入れると作業行を作成します')
     );
     return;
   }
 
-  for (const row of state.rows) {
-    const link = resolveNextLink(row);
-
-    // 記事下リンクの週は回ごとに違う。外部配信日で突き合わせる
-    const hit = findSheetRowForRow(row);
-    const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
-
-    const reason = bottomCopyBlockReason(link, row, hit, bottomHtml);
-
+  state.rows.forEach((row, index) => {
     const tr = document.createElement('tr');
 
-    // 回ラベル列の左バーで、最後の回と手当てが要る回を離れていても分かるようにする
-    if (row.isFinal) tr.classList.add('is-final');
-    if (needsAttention(link, reason)) tr.classList.add('is-flag');
-
-    // 公開グループの切れ目が表の上で分かるようにする
-    if (isGroupStartRow(row)) tr.classList.add('is-group-start');
-
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
-    tr.appendChild(createPlannedCell(row));
-    tr.appendChild(createNextCell(link));
-    tr.appendChild(createSheetCell(row, hit, bottomHtml));
 
+    // GLO公開と外部配信は別の列にする。日付がずれるので並べて見比べる
+    const gloCell = createPlannedCell(row, 'glo');
+    const extCell = createPlannedCell(row, 'ext');
+
+    tr.appendChild(gloCell);
+    tr.appendChild(extCell);
+
+    // ---- 今回の記事ID・記事タイトル ----
+    // ①タブと同じものを、同じ形でここでも編集できるようにする
+    const idCell = document.createElement('td');
+    idCell.className = 'col-id';
+
+    const input = createRowIdInput(row, index, 'bottom');
+
+    idCell.appendChild(input);
+    tr.appendChild(idCell);
+
+    const titleCell = document.createElement('td');
+    titleCell.className = 'col-title';
+
+    const titleInput = createRowTitleInput(row, index, 'bottom');
+    const titleCount = document.createElement('div');
+
+    titleCount.className = 'title-count';
+
+    titleCell.appendChild(titleInput);
+    titleCell.appendChild(titleCount);
+    tr.appendChild(titleCell);
+
+    // ---- この話の続きを読む / 記事下 / 操作 ----
+    const nextCell = document.createElement('td');
+    const sheetCell = document.createElement('td');
     const actionCell = document.createElement('td');
+
     actionCell.className = 'col-act';
 
-    if (reason) {
-      actionCell.appendChild(
-        createDisabledButton('記事下まとめてコピー', reason)
-      );
-    } else {
-      actionCell.appendChild(
-        createCopyButton(
+    tr.appendChild(nextCell);
+    tr.appendChild(sheetCell);
+    tr.appendChild(actionCell);
+
+    row.elBottom = {
+      tr,
+      input,
+      titleInput,
+      titleCount,
+      gloCell,
+      extCell,
+      nextCell,
+      sheetCell,
+      actionCell,
+    };
+
+    updateTitleCount(row);
+
+    el.bottomBody.appendChild(tr);
+  });
+
+  state.rows.forEach((_, index) => updateBottomRow(index));
+}
+
+// 1行ぶんの「続きを読む・記事下・操作」を作り直す。
+// 記事IDやタイトルを打っている途中に表ごと作り直すと入力欄からフォーカスが外れるため、
+// 影響する行だけをここで差し替える
+function updateBottomRow(index) {
+  const row = state.rows[index];
+
+  if (!row || !row.elBottom) return;
+
+  const { tr, nextCell, sheetCell, actionCell } = row.elBottom;
+
+  const link = resolveNextLink(row);
+
+  // 記事下リンクの週は回ごとに違う。外部配信日で突き合わせる
+  const hit = findSheetRowForRow(row);
+  const bottomHtml = hit ? buildArticleBottomHtml(hit.html) : '';
+
+  const reason = bottomCopyBlockReason(link, row, hit, bottomHtml);
+
+  // 回ラベル列の左バーで、最後の回と手当てが要る回を離れていても分かるようにする
+  tr.classList.toggle('is-final', Boolean(row.isFinal));
+  tr.classList.toggle('is-flag', needsAttention(link, reason));
+
+  // 公開グループの切れ目が表の上で分かるようにする
+  tr.classList.toggle('is-group-start', isGroupStartRow(row));
+
+  fillNextCell(nextCell, link);
+  fillSheetCell(sheetCell, row, hit, bottomHtml);
+
+  // ボタンは作り直す。押した時点の内容でコピーさせたいので、
+  // 古いボタンを使い回さず state.copyButtons からも外す
+  const previous = actionCell.children[0];
+
+  if (previous) {
+    state.copyButtons = state.copyButtons.filter((b) => b !== previous);
+  }
+
+  actionCell.textContent = '';
+
+  actionCell.appendChild(
+    reason
+      ? createDisabledButton('記事下まとめてコピー', reason)
+      : createCopyButton(
           '記事下まとめてコピー',
           () => joinBottomHtml(link.html, bottomHtml),
           '記事下HTMLをコピーしました',
           'strong'
         )
-      );
-    }
-
-    tr.appendChild(actionCell);
-
-    el.bottomBody.appendChild(tr);
-  }
+  );
 }
 
 // 2つ目以降のグループの先頭かどうか。表に区切り線を引くために使う
@@ -1576,8 +1713,8 @@ function resolveNextLink(row) {
   };
 }
 
-function createNextCell(link) {
-  const cell = document.createElement('td');
+function fillNextCell(cell, link) {
+  cell.textContent = '';
   cell.className = 'col-next';
 
   // 一番最後の回に「続き」は無い。ここに文言を出すと、記事下にそのまま貼る文だと
@@ -1593,7 +1730,6 @@ function createNextCell(link) {
     cell.appendChild(
       createLine(`${link.nextLabel}の記事IDを入力してください`, 'warn')
     );
-    cell.appendChild(createLine('①タブで入力します', 'sub faint'));
     return cell;
   }
 
@@ -1669,13 +1805,22 @@ function findRiskyTitleParts(title) {
 
 // 記事下リンク（連載一覧＋イチオシ）の状態。
 // 誤ったHTMLを作らないよう、取れていない理由をそのまま出す
-function createSheetCell(row, hit, bottomHtml) {
-  const cell = document.createElement('td');
+function fillSheetCell(cell, row, hit, bottomHtml) {
+  cell.textContent = '';
   cell.className = 'col-sheet';
+
+  // まだ取得していないのか、取得に失敗したのかを混ぜない。
+  // 起動直後に「取得できませんでした」と出すと、原因を探しに行かせてしまう
+  if (!state.sheetFetched) {
+    cell.appendChild(
+      createLine('カテゴリコードを取得してください', 'warn')
+    );
+    return cell;
+  }
 
   if (state.sheetStatus !== 'ok') {
     cell.appendChild(
-      createLine('記事下リンク：スプレッドシートを取得できませんでした', 'warn')
+      createLine('スプレッドシートを取得できませんでした', 'warn')
     );
 
     if (state.sheetMessage) {
@@ -1687,7 +1832,7 @@ function createSheetCell(row, hit, bottomHtml) {
 
   if (!row.extAt) {
     cell.appendChild(
-      createLine('記事下リンク：このグループの開始日と時刻を入力してください', 'warn')
+      createLine('このグループの開始日と時刻を入力してください', 'warn')
     );
     return cell;
   }
@@ -1695,7 +1840,7 @@ function createSheetCell(row, hit, bottomHtml) {
   // 該当が無いときに黙って別の週を使うと、古いイチオシを貼ってしまう
   if (!hit) {
     cell.appendChild(
-      createLine('記事下リンク：該当期間が見つかりません', 'warn')
+      createLine('該当期間が見つかりません', 'warn')
     );
     cell.appendChild(
       createLine(`外部配信日：${fmtYmd(row.extAt)}`, 'sub')
@@ -1705,7 +1850,7 @@ function createSheetCell(row, hit, bottomHtml) {
 
   if (!state.series) {
     cell.appendChild(
-      createLine('記事下リンク：連載情報を取得してください', 'warn')
+      createLine('連載情報を取得してください', 'warn')
     );
     cell.appendChild(
       createLine('一覧リンクのカテゴリコードと書籍名に使います', 'sub')
@@ -1715,7 +1860,7 @@ function createSheetCell(row, hit, bottomHtml) {
 
   if (!bottomHtml) {
     cell.appendChild(
-      createLine(`記事下：${fmtPeriodRange(hit.period)}（C列が空です）`, 'warn')
+      createLine(`${fmtPeriodRange(hit.period)}（C列が空です）`, 'warn')
     );
     return cell;
   }
@@ -1755,6 +1900,10 @@ function bottomCopyBlockReason(link, row, hit, bottomHtml) {
 
 // 記事下リンク（連載一覧＋イチオシ）側だけの事情
 function sheetBlockReason(row, hit, bottomHtml) {
+  if (!state.sheetFetched) {
+    return 'カテゴリコードを取得してください（記事下リンクと連載情報に使います）';
+  }
+
   if (state.sheetStatus !== 'ok') {
     return state.sheetMessage
       ? `記事下データを取得できませんでした（${state.sheetMessage}）`
@@ -1785,33 +1934,34 @@ function sheetBlockReason(row, hit, bottomHtml) {
 
 // 公開予定は2行に分けて出す。
 // GLO公開と外部配信は日付がずれるので、並べて見えるようにする
-function createPlannedCell(row) {
+// GLO公開と外部配信は別の列に出す。
+// 同じ列に2行で入れると、どちらの日付を見ているのか分かりにくい。
+// kind は 'glo' か 'ext'
+function createPlannedCell(row, kind) {
   const cell = document.createElement('td');
-  cell.className = 'col-date';
+  const isGlo = kind === 'glo';
 
-  if (!row.gloAt || !row.extAt) {
-    cell.appendChild(createLine('—', 'warn', 'このグループの開始日と時刻を入力してください'));
+  cell.className = `col-date ${isGlo ? 'col-glo' : 'col-ext'}`;
+
+  const at = isGlo ? row.gloAt : row.extAt;
+
+  if (!at) {
+    cell.appendChild(
+      createLine('—', 'warn', 'このグループの開始日と時刻を入力してください')
+    );
     return cell;
   }
 
+  const label = isGlo ? 'GLO公開' : '外部配信';
+  const clock = `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+
+  // 日付と時刻は行を分ける。列が狭くても切れず、上下で見比べられる
   cell.appendChild(
-    createLine(
-      `GLO ${fmtPlannedShort(row.gloAt)}`,
-      '',
-      `GLO公開：${fmtYmd(row.gloAt)} ${pad2(row.gloAt.getHours())}:${pad2(
-        row.gloAt.getMinutes()
-      )}`
-    )
+    createLine(fmtMdShort(at), 'date-day', `${label}：${fmtYmd(at)} ${clock}`)
   );
 
   cell.appendChild(
-    createLine(
-      `外部 ${fmtPlannedShort(row.extAt)}`,
-      'sub',
-      `外部配信：${fmtYmd(row.extAt)} ${pad2(row.extAt.getHours())}:${pad2(
-        row.extAt.getMinutes()
-      )}`
-    )
+    createLine(clock, 'date-clock', `${label}：${fmtYmd(at)} ${clock}`)
   );
 
   return cell;

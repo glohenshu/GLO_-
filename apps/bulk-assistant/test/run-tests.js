@@ -292,6 +292,11 @@ function setup(options = {}) {
   state.sheetMessage = options.sheetMessage || '';
   state.sheetRows = sheetRows;
 
+  // 取得済みかどうかは「失敗した」と書き分けるための別のフラグ。
+  // テストでは取得を1回通した状態を既定にする
+  state.sheetFetched =
+    options.sheetFetched === undefined ? true : options.sheetFetched;
+
   state.series = options.series === undefined ? SERIES : options.series;
 
   // グループはアプリ側で書き換わる（追加・削除・並べ替え）。
@@ -877,6 +882,95 @@ check('すべて消すと退避分も消える', () => {
   return ids.join(',') === ',,,' || `→ ${ids.join(',')}`;
 });
 
+check('②の表にも記事ID・タイトルの入力欄がある', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const refs = app.state.rows[0].elBottom;
+
+  return (
+    (Boolean(refs && refs.input && refs.titleInput && refs.titleCount) &&
+      refs.input.className.includes('id-input') &&
+      refs.titleInput.className.includes('title-input')) ||
+    '→ ②に入力欄がありません'
+  );
+});
+
+check('②で打ったタイトルが①にも入り、文字数も両方出る', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const row = app.state.rows[0];
+
+  row.elBottom.titleInput.value = 'あいう😀';
+  app.el.bottomBody.dispatch('input', { target: row.elBottom.titleInput });
+
+  return (
+    (row.articleTitle === 'あいう😀' &&
+      row.el.titleInput.value === 'あいう😀' &&
+      row.el.titleCount.textContent === '4文字' &&
+      row.elBottom.titleCount.textContent === '4文字') ||
+    `→ ${row.el.titleInput.value} / ${row.el.titleCount.textContent}`
+  );
+});
+
+check('①で打った記事IDが②にも入る', () => {
+  const app = setup({ episodeCount: 3 });
+
+  typeInto(app, 1, { id: '30002' });
+
+  return (
+    app.state.rows[1].elBottom.input.value === '30002' ||
+    `→ ${app.state.rows[1].elBottom.input.value}`
+  );
+});
+
+check('②で次の回のIDを打つと、その場で前の行の続きが更新される', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.switchTab('bottom');
+
+  const row = app.state.rows[1];
+
+  row.elBottom.input.value = '30002';
+  app.el.bottomBody.dispatch('input', { target: row.elBottom.input });
+
+  const first = bottomRow(app, 0);
+
+  return (
+    (first.text.includes('次回：第2回／ID 30002') &&
+      first.button.disabled === false) ||
+    `→ ${first.text}`
+  );
+});
+
+check('入力しても②の表ごとは作り直さない（フォーカスが外れないように）', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.switchTab('bottom');
+
+  const before = app.state.rows[1].elBottom.input;
+
+  before.value = '30002';
+  app.el.bottomBody.dispatch('input', { target: before });
+
+  return (
+    app.state.rows[1].elBottom.input === before || '→ 入力欄が作り直された'
+  );
+});
+
+check('GLO公開と外部配信は別の列に出す', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const refs = app.state.rows[1].elBottom;
+
+  return (
+    (textOf(refs.gloCell).includes('8/18') &&
+      textOf(refs.extCell).includes('8/19') &&
+      refs.gloCell.classList.contains('col-glo') &&
+      refs.extCell.classList.contains('col-ext')) ||
+    `→ ${textOf(refs.gloCell)} / ${textOf(refs.extCell)}`
+  );
+});
+
 check('②タブの回数を変えると①も同じ回数になる', () => {
   const app = setup({ episodeCount: 8 });
 
@@ -1289,6 +1383,22 @@ check('C列が空なら止める', () => {
   return (
     (row.button.disabled === true && row.button.title.includes('C列が空')) ||
     `→ ${row.button.disabled} / ${row.button.title}`
+  );
+});
+
+check('取得前は「失敗」ではなく「取得してください」と出す', () => {
+  const app = setup({ episodeCount: 3, sheetFetched: false, sheetRows: null });
+
+  typeInto(app, 1, { id: '30002' });
+  app.renderBottomTable();
+
+  const row = bottomRow(app, 0);
+
+  return (
+    (row.text.includes('カテゴリコードを取得してください') &&
+      !row.text.includes('取得できませんでした') &&
+      row.button.disabled === true) ||
+    `→ ${row.text}`
   );
 });
 

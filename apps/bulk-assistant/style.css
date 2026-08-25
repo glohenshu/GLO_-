@@ -648,11 +648,33 @@ a:focus-visible {
 .grid .col-id { width: 116px; }
 .grid .col-act { width: 152px; }
 
-.grid-bottom .col-act { width: 168px; }
+/* ②は①と同じく記事ID・記事タイトルを行内で編集する。
+   そのぶん列が多いので、日付は日付・時刻の2行に分けて幅を詰める */
+.grid-bottom .col-ep { width: 72px; }
+.grid-bottom .col-date { width: 88px; }
+.grid-bottom .col-id { width: 92px; }
+.grid-bottom .col-title { width: auto; }
+.grid-bottom .col-next { width: 20%; }
+.grid-bottom .col-sheet { width: 120px; }
+.grid-bottom .col-act { width: 174px; }
 
-/* 公開予定は「GLO 8/25 21:00」「外部 8/25 21:00」の2行。
-   再掲の日付列（84px）のままだと入りきらず、隣の列に重なる */
-.grid-bottom .col-date { width: 122px; }
+/* 公開日は見比べるものなので、従属情報の薄いグレーにしない */
+.grid-bottom .col-date .line {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.grid-bottom .col-date .line.date-clock {
+  font-weight: 500;
+  color: var(--sub);
+}
+
+/* 外部配信は「1日ずつずれる側」。GLO公開と地色で見分けられるようにする */
+.grid-bottom .col-ext { background: var(--panel-2); }
+.grid tbody tr:hover .col-ext { background: var(--accent-soft); }
+
+/* 入力欄で背が高くなるので、①と同じだけ詰める */
+.grid-bottom td { padding-top: 6px; padding-bottom: 6px; }
 
 /* 公開グループの編集表。設定欄の中に置くので幅を詰める */
 .pub-groups { display: block; }
@@ -693,7 +715,6 @@ a:focus-visible {
 .grid-next .col-ep { width: 74px; }
 .grid-next .col-date { width: 100px; }
 .grid-next .col-act { width: 132px; }
-.grid-bottom .col-next { width: 34%; }
 
 /* 前回記事タブ。20回ぶん並べても横スクロールが出ないよう、
    記事タイトル欄に幅を寄せて他の列は必要最小限にする */
@@ -1009,10 +1030,16 @@ button.copy.strong.template.copied {
      「第100回」「GLO 8/25 21:00」が入る幅は残す */
   .grid .col-ep { width: 72px; }
   .grid .col-date { width: 74px; }
-  .grid-bottom .col-date { width: 112px; }
   .grid .col-id { width: 96px; }
   .grid .col-act,
   .grid-bottom .col-act { width: 140px; }
+
+  .grid-bottom .col-ep { width: 62px; }
+  .grid-bottom .col-date { width: 78px; }
+  .grid-bottom .col-id { width: 82px; }
+  .grid-bottom .col-next { width: 18%; }
+  .grid-bottom .col-sheet { width: 104px; }
+  .grid-bottom .col-act { width: 162px; }
 
   .grid-prev .col-ep { width: 72px; }
   .grid-prev .col-id { width: 78px; }
