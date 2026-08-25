@@ -10,7 +10,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.0.2</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.0.3</span></h1>
 
     <div class="search-row">
       <label for="code-input">カテゴリコード</label>
@@ -145,17 +145,29 @@
     <!-- ---- ② この話の続き ---- -->
     <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
 
-      <!-- 一括集中の公開日の扱いが未確定のため、週は自動判定せず手で選ぶ。
-           日付の仕様が決まったら、ここを公開予定日からの自動判定に差し替える -->
+      <!-- GLO公開は一括公開日に固定して1分ずつ、外部配信は1日ずつずらす。
+           記事下リンクの週は外部配信日で判定する -->
       <div class="next-settings">
         <div class="next-field">
-          <label for="week-select">記事下リンクの週</label>
-          <select id="week-select"></select>
-          <span id="week-status" class="note"></span>
+          <label for="pub-date">GLO一括公開日</label>
+          <input id="pub-date" type="date">
         </div>
+
+        <div class="next-field">
+          <label for="pub-time">公開時刻</label>
+          <input id="pub-time" type="time" step="60">
+        </div>
+
+        <span id="pub-status" class="note"></span>
       </div>
 
       <dl class="hint hint-defs">
+        <dt>GLO公開日時</dt>
+        <dd>日付は一括公開日で全回そろえ、時刻だけ1分ずつずらします（14:00／14:01／14:02…）。</dd>
+
+        <dt>外部配信日時</dt>
+        <dd>一括公開日から1日ずつずらします。時刻は全回同じです。</dd>
+
         <dt>この話の続きを読む</dt>
         <dd>①タブに入れた「次の回」の記事ID・記事タイトルを使います。最後の行は最終回として文言に差し替えます。</dd>
 
@@ -163,7 +175,7 @@
         <dd>今回のカテゴリコードと書籍タイトルに置き換えます。kintoneから取得できていないと作れません。</dd>
 
         <dt>【イチオシ記事】</dt>
-        <dd>スプレッドシート「毎月の記事下リンク」のC列をそのまま使います。上で選んだ週の内容が全回に入ります。</dd>
+        <dd>スプレッドシート「毎月の記事下リンク」のC列をそのまま使います。週は<strong>外部配信日</strong>で判定します。</dd>
 
         <dt>注目・人気記事</dt>
         <dd>【注目記事】は通常回では落とし、最終回だけ残します。【人気記事】は全回落とします。</dd>
@@ -176,6 +188,7 @@
         <thead>
           <tr>
             <th class="col-ep">回</th>
+            <th class="col-date">公開予定</th>
             <th class="col-next">この話の続きを読む</th>
             <th class="col-sheet">記事下（連載一覧＋イチオシ）</th>
             <th class="col-act"></th>

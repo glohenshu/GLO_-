@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.2
+   新規一括集中アシスタント Ver.0.3
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -48,9 +48,14 @@ const state = {
   sheetStatus: 'error',
   sheetMessage: '',
 
-  // 使う週（sheetRows のインデックス）。
-  // 一括集中の公開日の扱いが未確定なので、日付から自動判定せず画面で選ぶ
-  weekIndex: -1,
+  // 年を推定済みの行。sheetRows が変わったときだけ作り直す
+  parsedSheetRows: null,
+  parsedSheetSource: null,
+
+  // 一括公開日と公開時刻。
+  // GLO公開＝この日付のまま1分ずつ、外部配信＝この時刻のまま1日ずつずらす
+  pubDate: '',
+  pubTime: '',
 
   // ②のコピーボタン。コピー済み表示を1件だけにするために持つ
   copyButtons: [],
@@ -96,8 +101,9 @@ const el = {
   prevCountPlus: document.getElementById('prev-count-plus'),
   prevBody: document.getElementById('prev-body'),
 
-  weekSelect: document.getElementById('week-select'),
-  weekStatus: document.getElementById('week-status'),
+  pubDate: document.getElementById('pub-date'),
+  pubTime: document.getElementById('pub-time'),
+  pubStatus: document.getElementById('pub-status'),
   bottomBody: document.getElementById('bottom-body'),
 
   toast: document.getElementById('toast'),
@@ -230,13 +236,19 @@ el.prevBody.addEventListener('input', (event) => {
   markBottomDirty();
 });
 
-// ---- 記事下リンクの週 ----
+// ---- 一括公開日・公開時刻 ----
+//
+// 日付が変われば外部配信日も変わり、記事下リンクの週も変わる
 
-el.weekSelect.addEventListener('change', () => {
-  const index = Number(el.weekSelect.value);
+el.pubDate.addEventListener('input', () => {
+  state.pubDate = el.pubDate.value;
+  buildRowDates();
+  renderBottomTable();
+});
 
-  state.weekIndex = Number.isInteger(index) ? index : -1;
-
+el.pubTime.addEventListener('input', () => {
+  state.pubTime = el.pubTime.value;
+  buildRowDates();
   renderBottomTable();
 });
 
@@ -322,7 +334,9 @@ async function fetchSeriesData() {
       sheet.status === 'ok' && Array.isArray(sheet.rows) ? sheet.rows : null;
     state.sheetMessage = String(sheet.message || '');
 
-    renderWeekSelect();
+    // 行が入れ替わったので、年の推定はやり直させる
+    state.parsedSheetRows = null;
+    state.parsedSheetSource = null;
 
     const series = json.series || {};
 
@@ -553,9 +567,159 @@ function buildRows() {
       // コピー済み表示の根拠。この回で実際にコピーしたHTMLを覚えておく
       copiedHtml: state.copiedStash.get(number) || '',
 
+      // 公開予定。buildRowDates() で入れる
+      gloAt: null,
+      extAt: null,
+
       el: null,
     });
   }
+
+  buildRowDates();
+}
+
+// ------------------------------------------------------------
+// 公開予定日時
+//
+//   GLO公開   … 一括公開日は全回そろえ、時刻を1分ずつ足す
+//                （14:00 / 14:01 / 14:02 …）
+//   外部配信  … 一括公開日から1日ずつ足す。時刻は全回同じ
+//
+// 記事下リンクの週は外部配信日で判定する。
+// 60回を超えると分が繰り上がって日付が変わるが、
+// そこは Date の繰り上げに任せて実際の日時をそのまま出す。
+// ------------------------------------------------------------
+
+function buildRowDates() {
+  const base = parseDateInput(state.pubDate);
+  const time = parseTimeInput(state.pubTime);
+
+  state.rows.forEach((row, index) => {
+    if (!base || !time) {
+      row.gloAt = null;
+      row.extAt = null;
+      return;
+    }
+
+    row.gloAt = new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate(),
+      time.hh,
+      time.mi + index
+    );
+
+    row.extAt = new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate() + index,
+      time.hh,
+      time.mi
+    );
+  });
+
+  renderPubStatus();
+}
+
+function renderPubStatus() {
+  const base = parseDateInput(state.pubDate);
+  const time = parseTimeInput(state.pubTime);
+
+  if (!base || !time) {
+    el.pubStatus.textContent = '公開日と時刻を入れると公開予定を計算します';
+    el.pubStatus.classList.remove('warn');
+    return;
+  }
+
+  const last = state.rows[state.rows.length - 1];
+
+  if (!last || !last.extAt) {
+    el.pubStatus.textContent = '';
+    el.pubStatus.classList.remove('warn');
+    return;
+  }
+
+  // 最終回まで何日ぶんになるかは、シートの週が足りているかの目安になる
+  el.pubStatus.textContent =
+    `GLO公開：${fmtYmd(base)} ${pad2(time.hh)}:${pad2(time.mi)}〜／` +
+    `外部配信：${fmtYmd(base)}〜${fmtYmd(last.extAt)}`;
+  el.pubStatus.classList.remove('warn');
+}
+
+function parseDateInput(value) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) return null;
+
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+
+  const date = new Date(y, m - 1, d);
+
+  // 2026-02-31 のような日付は Date が繰り上げてしまうので弾く
+  if (date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+
+  return date;
+}
+
+// 入力欄は type="time" なので "21:00" の形で来る。
+// 空欄や読めない値のときは null を返してコピーを止める
+function parseTimeInput(value) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match) return null;
+
+  const hh = Number(match[1]);
+  const mi = Number(match[2]);
+
+  if (hh > 23 || mi > 59) return null;
+
+  return { hh, mi };
+}
+
+function fmtDateInput(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(
+    date.getDate()
+  )}`;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+// 一覧に小さく出す用：8/20 21:00
+function fmtPlannedShort(date) {
+  return (
+    `${date.getMonth() + 1}/${date.getDate()} ` +
+    `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+  );
+}
+
+// 確認用：2026/08/20
+function fmtYmd(date) {
+  return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(
+    date.getDate()
+  )}`;
+}
+
+// 期間の確認表示用：2026/8/23
+function fmtYmdShort(date) {
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+// 期間の表示は 2026/8/23〜2026/8/29 の形に統一する
+function fmtPeriodRange(period) {
+  return `${fmtYmdShort(period.start)}〜${fmtYmdShort(period.end)}`;
+}
+
+// 起動時の既定値。GLOの一括公開は21時が多いので21:00にしておく
+function initPubFields() {
+  state.pubDate = fmtDateInput(new Date());
+  state.pubTime = '21:00';
+
+  el.pubDate.value = state.pubDate;
+  el.pubTime.value = state.pubTime;
 }
 
 // 行を作り直す前に、今表示している入力を回数ごとに退避する。
@@ -968,17 +1132,19 @@ function renderBottomTable() {
 
   if (!state.rows.length) {
     el.bottomBody.appendChild(
-      createEmptyRow(4, '①タブで回数を入れると作業行を作成します')
+      createEmptyRow(5, '①タブで回数を入れると作業行を作成します')
     );
     return;
   }
 
-  const cHtml = getSelectedWeekHtml();
-
   for (const row of state.rows) {
     const link = resolveNextLink(row);
-    const bottomHtml = buildArticleBottomHtml(cHtml, row.isFinal);
-    const reason = bottomCopyBlockReason(link, cHtml, bottomHtml);
+
+    // 記事下リンクの週は回ごとに違う。外部配信日で突き合わせる
+    const hit = findSheetRowForRow(row);
+    const bottomHtml = hit ? buildArticleBottomHtml(hit.html, row.isFinal) : '';
+
+    const reason = bottomCopyBlockReason(link, row, hit, bottomHtml);
 
     const tr = document.createElement('tr');
 
@@ -987,8 +1153,9 @@ function renderBottomTable() {
     if (needsAttention(link, reason)) tr.classList.add('is-flag');
 
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
+    tr.appendChild(createPlannedCell(row));
     tr.appendChild(createNextCell(link));
-    tr.appendChild(createSheetCell(row, cHtml, bottomHtml));
+    tr.appendChild(createSheetCell(row, hit, bottomHtml));
 
     const actionCell = document.createElement('td');
     actionCell.className = 'col-act';
@@ -1146,7 +1313,7 @@ function findRiskyTitleParts(title) {
 
 // 記事下リンク（連載一覧＋イチオシ）の状態。
 // 誤ったHTMLを作らないよう、取れていない理由をそのまま出す
-function createSheetCell(row, cHtml, bottomHtml) {
+function createSheetCell(row, hit, bottomHtml) {
   const cell = document.createElement('td');
   cell.className = 'col-sheet';
 
@@ -1162,16 +1329,20 @@ function createSheetCell(row, cHtml, bottomHtml) {
     return cell;
   }
 
-  // 週を選んでいないのか、選んだ週のC列が空なのかは原因が違う。
-  // まとめて「未選択」と出すと、シートを直せばよいことが伝わらない
-  if (state.weekIndex < 0) {
-    cell.appendChild(createLine('記事下リンク：週が未選択です', 'warn'));
+  if (!row.extAt) {
+    cell.appendChild(
+      createLine('記事下リンク：公開日と時刻を入力してください', 'warn')
+    );
     return cell;
   }
 
-  if (!cHtml) {
+  // 該当が無いときに黙って別の週を使うと、古いイチオシを貼ってしまう
+  if (!hit) {
     cell.appendChild(
-      createLine(`記事下：${getSelectedWeekLabel()}（C列が空です）`, 'warn')
+      createLine('記事下リンク：該当期間が見つかりません', 'warn')
+    );
+    cell.appendChild(
+      createLine(`外部配信日：${fmtYmd(row.extAt)}`, 'sub')
     );
     return cell;
   }
@@ -1187,36 +1358,34 @@ function createSheetCell(row, cHtml, bottomHtml) {
   }
 
   if (!bottomHtml) {
-    cell.appendChild(createLine('記事下：C列が空です', 'warn'));
+    cell.appendChild(
+      createLine(`記事下：${fmtPeriodRange(hit.period)}（C列が空です）`, 'warn')
+    );
     return cell;
   }
 
-  // 画面には選んだ週と誘導先だけを出す。
-  // C列の原文はホバーで確認できるようツールチップに残しておく
+  // B列の「8月第四週 8/23（日）〜8/29（土）」はそのままでは読みにくいので、
+  // 画面には判定した年を含む期間だけを出す。
+  //
+  // ただしB列に年が無いため、年の推定がずれると別の週のリンクを貼ってしまう。
+  // 拾った行と誘導先はホバーで確認できるようツールチップに残しておく
   const target = getListTarget();
 
   const tooltip = [
-    `シートB列：${getSelectedWeekLabel()}`,
+    `シートB列：${hit.period.label}`,
+    `外部配信日：${fmtYmd(row.extAt)}`,
     `一覧：/category/${target.categoryCode || '（コード不明）'}` +
       `『${target.bookTitle || 'タイトル不明'}』`,
   ].join('\n');
 
-  cell.appendChild(createLine(getSelectedWeekLabel(), 'range', tooltip));
-
-  cell.appendChild(
-    createLine(
-      `一覧：/category/${target.categoryCode}『${target.bookTitle}』`,
-      'sub ellip',
-      tooltip
-    )
-  );
+  cell.appendChild(createLine(fmtPeriodRange(hit.period), 'range', tooltip));
 
   return cell;
 }
 
 // 揃っていないものを押せてしまうと誤ったHTMLが貼られるため、
 // コピーできない場合はボタン自体を無効にして理由を出す
-function bottomCopyBlockReason(link, cHtml, bottomHtml) {
+function bottomCopyBlockReason(link, row, hit, bottomHtml) {
   if (link.kind === 'no-id') {
     return `${link.nextLabel}の記事IDが未入力です`;
   }
@@ -1225,23 +1394,25 @@ function bottomCopyBlockReason(link, cHtml, bottomHtml) {
     return '次の回がありません';
   }
 
-  return sheetBlockReason(cHtml, bottomHtml);
+  return sheetBlockReason(row, hit, bottomHtml);
 }
 
 // 記事下リンク（連載一覧＋イチオシ）側だけの事情
-function sheetBlockReason(cHtml, bottomHtml) {
+function sheetBlockReason(row, hit, bottomHtml) {
   if (state.sheetStatus !== 'ok') {
     return state.sheetMessage
       ? `記事下データを取得できませんでした（${state.sheetMessage}）`
       : '記事下データを取得できませんでした';
   }
 
-  if (state.weekIndex < 0) {
-    return '記事下リンクの週が未選択です';
+  if (!row || !row.extAt) {
+    return '公開日と時刻を入力してください';
   }
 
-  if (!cHtml) {
-    return '記事下リンクのC列が空です';
+  if (!hit) {
+    return `記事下リンクの該当期間が見つかりません（外部配信日 ${fmtYmd(
+      row.extAt
+    )}）`;
   }
 
   // 連載情報が無いと grxxxx・xxxxxxxx が残ったままのHTMLになる
@@ -1256,77 +1427,214 @@ function sheetBlockReason(cHtml, bottomHtml) {
   return '';
 }
 
-// ---- 記事下リンクの週 ----
+// 公開予定は2行に分けて出す。
+// GLO公開と外部配信は日付がずれるので、並べて見えるようにする
+function createPlannedCell(row) {
+  const cell = document.createElement('td');
+  cell.className = 'col-date';
 
-function renderWeekSelect() {
-  el.weekSelect.textContent = '';
-
-  const rows = Array.isArray(state.sheetRows) ? state.sheetRows : [];
-
-  if (!rows.length) {
-    state.weekIndex = -1;
-
-    el.weekSelect.disabled = true;
-
-    // 起動直後はまだ取得していないだけなので、失敗として出さない
-    if (state.sheetStatus !== 'ok' && !state.sheetMessage) {
-      el.weekStatus.textContent = 'カテゴリコードを取得すると選べます';
-      el.weekStatus.classList.remove('warn');
-      return;
-    }
-
-    el.weekStatus.textContent =
-      state.sheetStatus === 'ok'
-        ? 'スプレッドシートに行がありません'
-        : `取得できませんでした（${state.sheetMessage}）`;
-    el.weekStatus.classList.add('warn');
-    return;
+  if (!row.gloAt || !row.extAt) {
+    cell.appendChild(createLine('—', 'warn', '公開日と時刻を入力してください'));
+    return cell;
   }
 
-  // シートは下に追記されていくので、最終行が最新の週になる。
-  // 日付の仕様が決まるまでは、これを既定にして手で選べるようにしておく
-  rows.forEach((row, index) => {
-    const option = document.createElement('option');
+  cell.appendChild(
+    createLine(
+      `GLO ${fmtPlannedShort(row.gloAt)}`,
+      '',
+      `GLO公開：${fmtYmd(row.gloAt)} ${pad2(row.gloAt.getHours())}:${pad2(
+        row.gloAt.getMinutes()
+      )}`
+    )
+  );
 
-    option.value = String(index);
-    option.textContent = formatWeekLabel(row, index);
+  cell.appendChild(
+    createLine(
+      `外部 ${fmtPlannedShort(row.extAt)}`,
+      'sub',
+      `外部配信：${fmtYmd(row.extAt)} ${pad2(row.extAt.getHours())}:${pad2(
+        row.extAt.getMinutes()
+      )}`
+    )
+  );
 
-    el.weekSelect.appendChild(option);
-  });
-
-  state.weekIndex = rows.length - 1;
-
-  el.weekSelect.disabled = false;
-  el.weekSelect.value = String(state.weekIndex);
-
-  el.weekStatus.textContent = '既定はシートの最終行（最新の週）です';
-  el.weekStatus.classList.remove('warn');
+  return cell;
 }
 
-// B列は「9月第一週\n8/30（日）〜9/5（土）」のように2行入っている。
-// プルダウンでは1行にして、そのまま読めるようにする
-function formatWeekLabel(row, index) {
-  const label = String((row && row[0]) || '')
-    .split(/[\r\n]+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .join('　');
+// ============================================================
+// スプレッドシート「毎月の記事下リンク」との突き合わせ
+//
+// 再掲連載作成アシスタントの parsePeriodParts() / assignRowYears() /
+// findSheetRowForRow() をそのまま使う。
+// B列に年が無く1年以上分の行が積み上がっているため、
+// 行ごとの年を推定してから外部配信日と突き合わせる。
+//
+// 突き合わせる日付は**外部配信日**。GLO公開日は全回同じなので、
+// そちらで引くと全回が同じ週のイチオシになってしまう。
+// ============================================================
 
-  return label || `（B列が空の行 ${index + 1}行目）`;
+// B列の期間文字列から 月日 を取り出す
+//
+// 実データには以下の表記ゆれがある。
+//   「8/23（日）〜8/29（土）」  終了側に月あり
+//   「6/1（日）～7（土）」      終了側は日のみ（月は開始と同じ）
+//   「4/1～15」                 曜日なし・終了側は日のみ
+// 波ダッシュは ～(U+FF5E) と 〜(U+301C) の両方が混在している。
+function parsePeriodParts(text) {
+  const line = String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => /\d{1,2}\s*\/\s*\d{1,2}/.test(l));
+
+  if (!line) return null;
+
+  const m = line.match(
+    /(\d{1,2})\s*\/\s*(\d{1,2})[^0-9]*?[～〜~][^0-9]*?(?:(\d{1,2})\s*\/\s*)?(\d{1,2})/
+  );
+
+  if (!m) return null;
+
+  const sm = +m[1];
+  const sd = +m[2];
+  const em = m[3] ? +m[3] : sm;
+  const ed = +m[4];
+
+  if (!sm || !sd || !em || !ed) return null;
+  if (sm > 12 || em > 12 || sd > 31 || ed > 31) return null;
+
+  return { sm, sd, em, ed };
 }
 
-function getSelectedWeekLabel() {
-  const rows = Array.isArray(state.sheetRows) ? state.sheetRows : [];
-  const row = rows[state.weekIndex];
+// 最終行を anchorYear として、下から上へ年を割り当てる
+function assignYearsFrom(parsed, idxs, anchorYear) {
+  let year = anchorYear;
+  let prevSm = null;
 
-  return row ? formatWeekLabel(row, state.weekIndex) : '';
+  for (let k = idxs.length - 1; k >= 0; k--) {
+    const p = parsed[idxs[k]];
+    if (prevSm !== null && p.parts.sm > prevSm) year -= 1;
+    p.year = year;
+    prevSm = p.parts.sm;
+  }
 }
 
-function getSelectedWeekHtml() {
-  const rows = Array.isArray(state.sheetRows) ? state.sheetRows : [];
-  const row = rows[state.weekIndex];
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
-  return String((row && row[1]) || '').trim();
+// B列には「8/23（日）」のように曜日が書かれている行が多い。
+// 曜日は年を一意に特定できるため、割り当てた年の正しさを採点できる。
+function scoreWeekdays(parsed, idxs) {
+  let score = 0;
+
+  for (const i of idxs) {
+    const p = parsed[i];
+    const m = String((p.row && p.row[0]) || '').match(
+      /(\d{1,2})\s*\/\s*(\d{1,2})\s*[（(]\s*([日月火水木金土])\s*[）)]/
+    );
+
+    if (!m) continue;
+
+    const d = new Date(p.year, p.parts.sm - 1, p.parts.sd);
+    if (WEEKDAYS[d.getDay()] === m[3]) score += 1;
+  }
+
+  return score;
+}
+
+function assignRowYears(rows, today) {
+  const parsed = rows.map((row) => ({
+    row,
+    parts: parsePeriodParts((row && row[0]) || ''),
+    year: null,
+  }));
+
+  const idxs = parsed.map((p, i) => (p.parts ? i : -1)).filter((i) => i >= 0);
+
+  if (!idxs.length) return parsed;
+
+  // 「今日に近い年」だけで決めるとシートが数か月未更新のときにずれるため、
+  // まずB列の曜日と一致する数で採点し、同点なら今日に近い年を採る。
+  const last = parsed[idxs[idxs.length - 1]].parts;
+  const ty = today.getFullYear();
+  let best = null;
+
+  for (const y of [ty - 2, ty - 1, ty, ty + 1]) {
+    assignYearsFrom(parsed, idxs, y);
+
+    const score = scoreWeekdays(parsed, idxs);
+    const dist = Math.abs(new Date(y, last.sm - 1, last.sd) - today);
+
+    if (
+      !best ||
+      score > best.score ||
+      (score === best.score && dist < best.dist)
+    ) {
+      best = { y, score, dist };
+    }
+  }
+
+  assignYearsFrom(parsed, idxs, best.y);
+
+  return parsed;
+}
+
+// 回数ぶん突き合わせるので、年の推定結果は使い回す
+function getParsedSheetRows() {
+  if (!Array.isArray(state.sheetRows)) return null;
+
+  if (state.parsedSheetSource !== state.sheetRows) {
+    state.parsedSheetRows = assignRowYears(state.sheetRows, new Date());
+    state.parsedSheetSource = state.sheetRows;
+  }
+
+  return state.parsedSheetRows;
+}
+
+// 最終行から上方向へ検索し、最初に一致した行を採用する。
+//
+// 年を推定したうえで突き合わせるため、該当週の行がまだ無い場合は
+// 「該当なし」になる。別の年の行に一致して古いリンクを貼ることを防ぐ。
+function findSheetRowForRow(row) {
+  const planned = row && row.extAt;
+  const parsed = getParsedSheetRows();
+
+  if (!planned || !parsed) return null;
+
+  // 時刻を落として日付だけで比較する
+  const target = new Date(
+    planned.getFullYear(),
+    planned.getMonth(),
+    planned.getDate()
+  );
+
+  for (let i = parsed.length - 1; i >= 0; i--) {
+    const p = parsed[i];
+    if (!p.parts || p.year === null) continue;
+
+    const { sm, sd, em, ed } = p.parts;
+
+    // 12/28〜1/3 のような年またぎは終了側の年を1つ進める
+    const sy = p.year;
+    const ey = em < sm ? p.year + 1 : p.year;
+
+    const start = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+
+    if (target >= start && target <= end) {
+      return {
+        period: {
+          start,
+          end,
+          label: String((p.row && p.row[0]) || '')
+            .replace(/\s*\n\s*/g, ' ')
+            .trim(),
+        },
+        html: (p.row && p.row[1]) || '',
+      };
+    }
+  }
+
+  return null;
 }
 
 // ------------------------------------------------------------
@@ -1619,6 +1927,6 @@ function showToast(message) {
 // ファイルの末尾でまとめて呼ぶ
 // ------------------------------------------------------------
 
-renderWeekSelect();
+initPubFields();
 setEpisodeCount(DEFAULT_EPISODE_COUNT);
 renderBottomTable();

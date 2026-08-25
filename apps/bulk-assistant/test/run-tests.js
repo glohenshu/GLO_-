@@ -9,7 +9,9 @@
    検証したいのは「誤ったHTMLを作らないこと」なので、
    見た目ではなく生成HTMLと、コピーを止める条件を中心に確認する。
 
-   このアプリは公開日から週を自動判定しないため、日付の固定はしていない。
+   日付は 2026/08/19（水）に固定する。
+   記事下シートのB列には年が無く、実行日から年を推定するため、
+   固定しないと数年後にテストが落ちるだけの作りになってしまう。
    ============================================================ */
 
 'use strict';
@@ -19,6 +21,7 @@ const path = require('path');
 const vm = require('vm');
 
 const APP_PATH = path.join(__dirname, '..', 'app.js');
+const TODAY_MS = new Date(2026, 7, 19, 10, 0, 0).getTime();
 
 // ------------------------------------------------------------
 // DOMスタブ
@@ -170,10 +173,23 @@ const APP_SOURCE =
   renderBottomTable, resolveNextLink, bottomCopyBlockReason, sheetBlockReason,
   buildNextArticleHtml, buildFinalEpisodeHtml, joinBottomHtml,
   buildArticleBottomHtml, removeDroppedParagraphs, getListTarget,
-  renderWeekSelect, getSelectedWeekHtml, getSelectedWeekLabel, formatWeekLabel,
+  buildRowDates, initPubFields, parseDateInput, parseTimeInput, fmtDateInput,
+  findSheetRowForRow, parsePeriodParts, assignRowYears, fmtPeriodRange, fmtYmd,
   findRiskyTitleParts, switchTab, escapeHtml,
 };
 `;
+
+const RealDate = Date;
+
+class FixedDate extends RealDate {
+  constructor(...args) {
+    if (args.length === 0) super(TODAY_MS);
+    else super(...args);
+  }
+  static now() {
+    return TODAY_MS;
+  }
+}
 
 function loadApp() {
   const document = {
@@ -191,6 +207,7 @@ function loadApp() {
     setTimeout,
     clearTimeout,
     URLSearchParams,
+    Date: FixedDate,
     location: { search: '' },
     history: { replaceState() {} },
     navigator: {},
@@ -220,33 +237,42 @@ const SERIES = {
 };
 
 // スプレッドシートC列。実データに合わせて先頭に余白の段落を置き、
-// 【注目記事】【人気記事】も入れて落とし分けを確認できるようにする
-const C_HTML = [
-  '<p>　</p>',
-  '',
-  '<p><span style="font-size:20px;">👉<a href="/category/grxxxx" target="_blank"><span style="color:#0000FF;">『xxxxxxxx』連載記事一覧は<u>こちら</u></span></a></span></p>',
-  '',
-  '<p><a href="/articles/-/40001" target="_blank"><strong><span style="color:#0000CD;">【イチオシ記事】</span></strong></a></p>',
-  '',
-  '<p align="center"><strong><span>【注目記事】</span></strong><br />',
-  '<a href="/articles/-/40002">注目のタイトル</a></p>',
-  '',
-  '<p><strong>【人気記事】</strong><br />',
-  '<a href="/articles/-/40003">人気のタイトル</a></p>',
-  '',
-  '<p>　</p>',
-  '',
-  '<p>ゴールドライフオンライン（GLO）は、表現者を応援するウェブメディアです。<br />',
-  'ゴールドライフオンライン（GLO）編集部：glo_henshu＠gentosha.co.jp</p>',
-].join('\n');
+// 【注目記事】【人気記事】も入れて落とし分けを確認できるようにする。
+// イチオシの記事IDを週ごとに変えて、週の切り替わりを確認できるようにする
+function makeC(pickupId) {
+  return [
+    '<p>　</p>',
+    '',
+    '<p><span style="font-size:20px;">👉<a href="/category/grxxxx" target="_blank"><span style="color:#0000FF;">『xxxxxxxx』連載記事一覧は<u>こちら</u></span></a></span></p>',
+    '',
+    `<p><a href="/articles/-/${pickupId}" target="_blank"><strong><span style="color:#0000CD;">【イチオシ記事】</span></strong></a></p>`,
+    '',
+    '<p align="center"><strong><span>【注目記事】</span></strong><br />',
+    '<a href="/articles/-/40002">注目のタイトル</a></p>',
+    '',
+    '<p><strong>【人気記事】</strong><br />',
+    '<a href="/articles/-/40003">人気のタイトル</a></p>',
+    '',
+    '<p>　</p>',
+    '',
+    '<p>ゴールドライフオンライン（GLO）は、表現者を応援するウェブメディアです。<br />',
+    'ゴールドライフオンライン（GLO）編集部：glo_henshu＠gentosha.co.jp</p>',
+  ].join('\n');
+}
 
-// 別の週。選び直したときに中身が変わることを確認する
-const C_HTML_OTHER = C_HTML.replace('/articles/-/40001', '/articles/-/49999');
+const C_HTML = makeC('40001');
 
+// 2026年の曜日で書く（8/16・8/23・8/30 が日曜）
 const SHEET_ROWS = [
-  ['8月第四週\n8/16（日）〜8/22（土）', C_HTML_OTHER],
-  ['8月第五週\n8/23（日）〜8/29（土）', C_HTML],
+  ['8月第三週\n8/16（日）〜8/22（土）', makeC('41111')],
+  ['8月第四週\n8/23（日）〜8/29（土）', makeC('42222')],
+  ['9月第一週\n8/30（日）〜9/5（土）', makeC('43333')],
 ];
+
+// 一括公開日 2026/08/18（火）21:00。
+// GLO公開は全回 8/18、外部配信は 8/18 から1日ずつ
+const PUB_DATE = '2026-08-18';
+const PUB_TIME = '21:00';
 
 // ------------------------------------------------------------
 // セットアップ
@@ -265,14 +291,28 @@ function setup(options = {}) {
 
   state.series = options.series === undefined ? SERIES : options.series;
 
-  app.renderWeekSelect();
+  state.pubDate = options.pubDate === undefined ? PUB_DATE : options.pubDate;
+  state.pubTime = options.pubTime === undefined ? PUB_TIME : options.pubTime;
+
+  app.el.pubDate.value = state.pubDate;
+  app.el.pubTime.value = state.pubTime;
 
   if (options.episodeCount) app.setEpisodeCount(options.episodeCount);
+
+  // 回数が既定と同じときは行が作り直されないので、日付は明示的に入れ直す
+  app.buildRowDates();
 
   app.renderPrevTable();
   app.renderBottomTable();
 
   return app;
+}
+
+// その回の記事下C列（週判定の結果）を取り出す
+function weekHtmlOf(app, index) {
+  const hit = app.findSheetRowForRow(app.state.rows[index]);
+
+  return hit ? hit.html : '';
 }
 
 // 画面で入力したときと同じ経路（prevBody の input イベント）を通す。
@@ -938,7 +978,7 @@ group('② 記事下');
 check('通常回は【注目記事】【人気記事】を落とす', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
 
   return (
     (!html.includes('【注目記事】') &&
@@ -951,7 +991,7 @@ check('通常回は【注目記事】【人気記事】を落とす', () => {
 check('最終回は【注目記事】を残し【人気記事】だけ落とす', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), true);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), true);
 
   return (
     (html.includes('【注目記事】') &&
@@ -964,7 +1004,7 @@ check('最終回は【注目記事】を残し【人気記事】だけ落とす'
 check('grxxxx を今回のカテゴリコードに置き換える', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
 
   return (
     (html.includes('/category/gr1974') && !html.includes('grxxxx')) || `→ ${html}`
@@ -974,7 +1014,7 @@ check('grxxxx を今回のカテゴリコードに置き換える', () => {
 check('xxxxxxxx を書籍タイトルに置き換える', () => {
   const app = setup({ episodeCount: 3 });
 
-  const html = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
 
   return (
     (html.includes('『七つのショートしょーと』') && !html.includes('xxxxxxxx')) ||
@@ -985,8 +1025,8 @@ check('xxxxxxxx を書籍タイトルに置き換える', () => {
 check('最終回も今回のカテゴリコードへ送る（参照元が無いため）', () => {
   const app = setup({ episodeCount: 3 });
 
-  const normal = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
-  const final = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), true);
+  const normal = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
+  const final = app.buildArticleBottomHtml(weekHtmlOf(app, 0), true);
 
   return (
     (normal.includes('/category/gr1974') && final.includes('/category/gr1974')) ||
@@ -1016,7 +1056,7 @@ check('書籍名の『』は二重にしない', () => {
     series: { ...SERIES, bookTitle: '『七つのショートしょーと』' },
   });
 
-  const html = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const html = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
 
   return (
     (html.includes('『七つのショートしょーと』') &&
@@ -1028,7 +1068,7 @@ check('書籍名の『』は二重にしない', () => {
 check('C列の先頭の余白を続きを読むの上へ回す', () => {
   const app = setup({ episodeCount: 3 });
 
-  const bottom = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
   const joined = app.joinBottomHtml('<p>HEAD</p>', bottom);
 
   return (
@@ -1051,7 +1091,7 @@ check('まとめてコピーが指定の並びになる', () => {
   app.renderBottomTable();
 
   const link = app.resolveNextLink(app.state.rows[0]);
-  const bottom = app.buildArticleBottomHtml(app.getSelectedWeekHtml(), false);
+  const bottom = app.buildArticleBottomHtml(weekHtmlOf(app, 0), false);
   const joined = app.joinBottomHtml(link.html, bottom);
 
   const order = [
@@ -1121,7 +1161,8 @@ check('連載情報が無ければ止める（プレースホルダーが残る�
 check('C列が空なら止める', () => {
   const app = setup({
     episodeCount: 3,
-    sheetRows: [['8月第五週\n8/23（日）〜8/29（土）', '']],
+    // 外部配信日 8/18 が入る週のC列を空にする
+    sheetRows: [['8月第三週\n8/16（日）〜8/22（土）', '']],
   });
 
   typeInto(app, 1, { id: '30002' });
@@ -1177,46 +1218,190 @@ check('②のコピー済みは最後の1件だけ', () => {
 });
 
 // ============================================================
-// 10. 記事下リンクの週
+// 10. 公開予定日時
 // ============================================================
 
-group('記事下リンクの週');
+group('公開予定日時');
 
-check('既定はシートの最終行（最新の週）', () => {
+check('GLO公開は日付そのまま・時刻を1分ずつずらす', () => {
   const app = setup({ episodeCount: 3 });
 
+  const got = app.state.rows.map(
+    (row) =>
+      `${app.fmtYmd(row.gloAt)} ${String(row.gloAt.getHours()).padStart(
+        2,
+        '0'
+      )}:${String(row.gloAt.getMinutes()).padStart(2, '0')}`
+  );
+
   return (
-    (app.state.weekIndex === SHEET_ROWS.length - 1 &&
-      app.getSelectedWeekLabel() === '8月第五週　8/23（日）〜8/29（土）') ||
-    `→ ${app.state.weekIndex} / ${app.getSelectedWeekLabel()}`
+    got.join(' / ') ===
+      '2026/08/18 21:00 / 2026/08/18 21:01 / 2026/08/18 21:02' ||
+    `→ ${got.join(' / ')}`
   );
 });
 
-check('選び直すとC列が入れ替わる', () => {
+check('外部配信は1日ずつずらす・時刻はそのまま', () => {
   const app = setup({ episodeCount: 3 });
 
-  app.el.weekSelect.value = '0';
-  app.el.weekSelect.dispatch('change');
-
-  const html = app.getSelectedWeekHtml();
+  const got = app.state.rows.map(
+    (row) =>
+      `${app.fmtYmd(row.extAt)} ${String(row.extAt.getHours()).padStart(
+        2,
+        '0'
+      )}:${String(row.extAt.getMinutes()).padStart(2, '0')}`
+  );
 
   return (
-    (html.includes('/articles/-/49999') && !html.includes('/articles/-/40001')) ||
-    '→ C列が切り替わっていません'
+    got.join(' / ') ===
+      '2026/08/18 21:00 / 2026/08/19 21:00 / 2026/08/20 21:00' ||
+    `→ ${got.join(' / ')}`
   );
 });
 
-check('B列の2行を1行にして選べるようにする', () => {
-  const app = setup({ episodeCount: 3 });
+check('分が60を超えたら時に繰り上げる', () => {
+  const app = setup({ episodeCount: 70, pubTime: '21:00' });
+
+  const row = app.state.rows[69]; // 第70回 → 21:00 + 69分
 
   return (
-    app.formatWeekLabel(['9月第一週\n8/30（日）〜9/5（土）', ''], 0) ===
-      '9月第一週　8/30（日）〜9/5（土）' ||
-    `→ ${app.formatWeekLabel(['9月第一週\n8/30（日）〜9/5（土）', ''], 0)}`
+    (row.gloAt.getHours() === 22 && row.gloAt.getMinutes() === 9) ||
+    `→ ${row.gloAt.getHours()}:${row.gloAt.getMinutes()}`
   );
 });
 
-check('シートが無いときは選択欄を無効にする', () => {
+check('外部配信は月をまたいでも繰り上がる', () => {
+  const app = setup({ episodeCount: 5, pubDate: '2026-08-30' });
+
+  const got = app.state.rows.map((row) => app.fmtYmd(row.extAt));
+
+  return (
+    got.join(',') ===
+      '2026/08/30,2026/08/31,2026/09/01,2026/09/02,2026/09/03' ||
+    `→ ${got.join(',')}`
+  );
+});
+
+check('ありえない日付は受け付けない', () => {
+  const app = loadApp();
+
+  return (
+    (app.parseDateInput('2026-02-31') === null &&
+      app.parseDateInput('2026-02-28') !== null &&
+      app.parseTimeInput('25:00') === null &&
+      app.parseTimeInput('21:00') !== null) ||
+    '→ 判定が違います'
+  );
+});
+
+check('公開日が空なら公開予定を出さずコピーも止める', () => {
+  const app = setup({ episodeCount: 3, pubDate: '' });
+
+  typeInto(app, 1, { id: '30002' });
+  app.renderBottomTable();
+
+  const row = bottomRow(app, 0);
+
+  return (
+    (app.state.rows[0].gloAt === null &&
+      row.button.disabled === true &&
+      row.button.title.includes('公開日と時刻を入力してください')) ||
+    `→ ${row.button.title}`
+  );
+});
+
+// ============================================================
+// 11. 記事下リンクの週判定（外部配信日で引く）
+// ============================================================
+
+group('記事下リンクの週判定');
+
+check('外部配信日が属する週のC列を使う', () => {
+  const app = setup({ episodeCount: 10 });
+
+  // 第1回 8/18 → 8/16〜8/22、第6回 8/23 → 8/23〜8/29
+  return (
+    (weekHtmlOf(app, 0).includes('/articles/-/41111') &&
+      weekHtmlOf(app, 5).includes('/articles/-/42222')) ||
+    `→ 第1回と第6回で週が切り替わっていません`
+  );
+});
+
+check('GLO公開日ではなく外部配信日で引く', () => {
+  const app = setup({ episodeCount: 10 });
+
+  // GLO公開は全回 8/18。それで引くと全回が同じ週になってしまう
+  const ids = app.state.rows.map((row, index) =>
+    weekHtmlOf(app, index).match(/\/articles\/-\/(4\d{4})/)[1]
+  );
+
+  return (
+    new Set(ids).size > 1 || `→ 全回が同じ週になっています（${ids[0]}）`
+  );
+});
+
+check('週をまたぐと画面の期間表示も変わる', () => {
+  const app = setup({ episodeCount: 10 });
+
+  return (
+    (bottomRow(app, 0).text.includes('2026/8/16〜2026/8/22') &&
+      bottomRow(app, 5).text.includes('2026/8/23〜2026/8/29')) ||
+    `→ ${bottomRow(app, 0).text} ／ ${bottomRow(app, 5).text}`
+  );
+});
+
+check('該当期間が無ければ黙って別の週を使わない', () => {
+  const app = setup({ episodeCount: 3, pubDate: '2026-12-01' });
+
+  typeInto(app, 1, { id: '30002' });
+  app.renderBottomTable();
+
+  const row = bottomRow(app, 0);
+
+  return (
+    (row.text.includes('該当期間が見つかりません') &&
+      row.button.disabled === true) ||
+    `→ ${row.text}`
+  );
+});
+
+check('B列の3つの表記ゆれを読める', () => {
+  const app = loadApp();
+
+  const got = [
+    '8/23（日）〜8/29（土）',
+    '6/1（日）～7（土）',
+    '4/1～15',
+  ].map((text) => {
+    const p = app.parsePeriodParts(text);
+    return p ? `${p.sm}/${p.sd}-${p.em}/${p.ed}` : 'null';
+  });
+
+  return (
+    got.join(',') === '8/23-8/29,6/1-6/7,4/1-4/15' || `→ ${got.join(',')}`
+  );
+});
+
+check('年またぎ（12/28〜1/3）を扱える', () => {
+  const app = setup({
+    episodeCount: 3,
+    pubDate: '2026-12-30',
+    sheetRows: [
+      ['12月第四週\n12/20（日）〜12/26（土）', makeC('41111')],
+      ['12月第五週\n12/27（日）〜1/2（土）', makeC('42222')],
+    ],
+  });
+
+  // 12/30・12/31・1/1 のいずれも 12/27〜1/2 の行に入る
+  const ids = app.state.rows.map((row, index) => {
+    const hit = app.findSheetRowForRow(row);
+    return hit ? hit.html.match(/\/articles\/-\/(4\d{4})/)[1] : 'なし';
+  });
+
+  return ids.join(',') === '42222,42222,42222' || `→ ${ids.join(',')}`;
+});
+
+check('シートが無いときは理由を出してコピーを止める', () => {
   const app = setup({
     episodeCount: 3,
     sheetRows: null,
@@ -1224,21 +1409,15 @@ check('シートが無いときは選択欄を無効にする', () => {
     sheetMessage: 'GAS取得エラー (500)',
   });
 
-  return (
-    (app.el.weekSelect.disabled === true &&
-      app.state.weekIndex === -1 &&
-      app.el.weekStatus.textContent.includes('GAS取得エラー')) ||
-    `→ ${app.el.weekSelect.disabled} / ${app.el.weekStatus.textContent}`
-  );
-});
+  typeInto(app, 1, { id: '30002' });
+  app.renderBottomTable();
 
-check('起動直後は失敗ではなく案内を出す', () => {
-  const app = loadApp();
+  const row = bottomRow(app, 0);
 
   return (
-    (app.el.weekStatus.textContent === 'カテゴリコードを取得すると選べます' &&
-      !app.el.weekStatus.classList.contains('warn')) ||
-    `→ ${app.el.weekStatus.textContent}`
+    (row.button.disabled === true &&
+      row.text.includes('スプレッドシートを取得できませんでした')) ||
+    `→ ${row.text}`
   );
 });
 
