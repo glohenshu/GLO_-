@@ -10,22 +10,67 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.0.1</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.0.2</span></h1>
 
-    <!-- 再掲連載アシスタントと違い、このアプリはkintoneを見ない。
-         一括集中はMWで採番した記事IDを手元に持って作業するため、
-         カテゴリコードの取得欄は置かない -->
     <div class="search-row">
-      <span class="note">記事IDとタイトルを入力して、前回記事リンクのHTMLを作ります</span>
+      <label for="code-input">カテゴリコード</label>
+
+      <!-- gr は固定。入力するのは数字だけにする -->
+      <span class="code-field">
+        <span class="code-prefix" aria-hidden="true">gr</span>
+        <input id="code-input" type="text" inputmode="numeric" placeholder="1974"
+               autocomplete="off" spellcheck="false" maxlength="8"
+               aria-label="カテゴリコードの数字（grは不要）">
+      </span>
+      <button id="fetch-btn" class="primary">情報取得</button>
+      <span id="fetch-status" class="fetch-status" role="status"></span>
     </div>
   </div>
 </header>
 
 <main class="content">
 
+  <!-- 警告 -->
+  <div id="warnings" class="warnings" hidden>
+    <p class="warnings-head">確認が必要な項目があります</p>
+    <ul id="warnings-list"></ul>
+  </div>
+
+  <!-- ============================================================
+       共通エリア（タブの上）
+       これから作る一括集中連載の基本情報
+       ============================================================ -->
+  <section id="section-common" class="block" hidden>
+    <div class="common-card">
+
+      <div class="common-zone">
+        <h2 id="series-title" class="series-title ellip"></h2>
+
+        <dl class="common-grid">
+          <div class="common-item">
+            <dt>カテゴリコード</dt>
+            <dd id="series-code" class="mono"></dd>
+          </div>
+          <div class="common-item">
+            <dt>制作No</dt>
+            <dd id="series-prodno" class="mono"></dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="common-zone common-zone-foot">
+        <div class="status-row">
+          <span id="sheet-status" class="note"></span>
+          <a id="kintone-link" class="ext-link" href="#" target="_blank" rel="noopener" hidden>kintoneで開く</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
   <!-- ============================================================
        タブ
-       ②以降を足す前提で、1タブでもタブの形にしておく
+       ①はカテゴリコードを取得していなくても使えるので最初から出す
        ============================================================ -->
   <section id="section-tabs" class="block">
 
@@ -33,6 +78,9 @@
       <button type="button" class="tab is-active" id="tab-prev"
               role="tab" aria-selected="true" aria-controls="panel-prev"
               data-tab="prev">① 前回記事リンク作成</button>
+      <button type="button" class="tab" id="tab-bottom"
+              role="tab" aria-selected="false" aria-controls="panel-bottom"
+              data-tab="bottom">② この話の続き</button>
     </div>
 
     <!-- ---- ① 前回記事リンク作成 ---- -->
@@ -90,6 +138,50 @@
           </tr>
         </thead>
         <tbody id="prev-body"></tbody>
+      </table>
+
+    </div>
+
+    <!-- ---- ② この話の続き ---- -->
+    <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
+
+      <!-- 一括集中の公開日の扱いが未確定のため、週は自動判定せず手で選ぶ。
+           日付の仕様が決まったら、ここを公開予定日からの自動判定に差し替える -->
+      <div class="next-settings">
+        <div class="next-field">
+          <label for="week-select">記事下リンクの週</label>
+          <select id="week-select"></select>
+          <span id="week-status" class="note"></span>
+        </div>
+      </div>
+
+      <dl class="hint hint-defs">
+        <dt>この話の続きを読む</dt>
+        <dd>①タブに入れた「次の回」の記事ID・記事タイトルを使います。最後の行は最終回として文言に差し替えます。</dd>
+
+        <dt>連載記事一覧</dt>
+        <dd>今回のカテゴリコードと書籍タイトルに置き換えます。kintoneから取得できていないと作れません。</dd>
+
+        <dt>【イチオシ記事】</dt>
+        <dd>スプレッドシート「毎月の記事下リンク」のC列をそのまま使います。上で選んだ週の内容が全回に入ります。</dd>
+
+        <dt>注目・人気記事</dt>
+        <dd>【注目記事】は通常回では落とし、最終回だけ残します。【人気記事】は全回落とします。</dd>
+
+        <dt>記事下まとめてコピー</dt>
+        <dd>続きを読む → 連載一覧 → イチオシ の順で1つにまとめます。「コピー済み ✓」は最後にコピーした1件だけに付きます。</dd>
+      </dl>
+
+      <table class="grid grid-bottom">
+        <thead>
+          <tr>
+            <th class="col-ep">回</th>
+            <th class="col-next">この話の続きを読む</th>
+            <th class="col-sheet">記事下（連載一覧＋イチオシ）</th>
+            <th class="col-act"></th>
+          </tr>
+        </thead>
+        <tbody id="bottom-body"></tbody>
       </table>
 
     </div>
