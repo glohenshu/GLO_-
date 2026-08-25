@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.3
+   新規一括集中アシスタント Ver.0.4
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -52,10 +52,14 @@ const state = {
   parsedSheetRows: null,
   parsedSheetSource: null,
 
-  // 一括公開日と公開時刻。
-  // GLO公開＝この日付のまま1分ずつ、外部配信＝この時刻のまま1日ずつずらす
-  pubDate: '',
-  pubTime: '',
+  // 公開グループ。1本の連載を何回かに分けて一括公開することがあるため、
+  // 「この回から」で区切って日付と方式を持たせる。
+  //
+  //   { startNumber, date, mode: 'bulk' | 'daily', gloTime, extTime }
+  //
+  //   bulk （一括）… GLO公開は date のまま1分ずつ／外部配信は1日ずつ
+  //   daily（毎日）… GLO公開も外部配信も1日ずつ。日時は同じになる
+  pubGroups: [],
 
   // ②のコピーボタン。コピー済み表示を1件だけにするために持つ
   copyButtons: [],
@@ -101,8 +105,8 @@ const el = {
   prevCountPlus: document.getElementById('prev-count-plus'),
   prevBody: document.getElementById('prev-body'),
 
-  pubDate: document.getElementById('pub-date'),
-  pubTime: document.getElementById('pub-time'),
+  pubGroupBody: document.getElementById('pub-group-body'),
+  pubGroupAdd: document.getElementById('pub-group-add'),
   pubStatus: document.getElementById('pub-status'),
   bottomBody: document.getElementById('bottom-body'),
 
@@ -236,20 +240,28 @@ el.prevBody.addEventListener('input', (event) => {
   markBottomDirty();
 });
 
-// ---- 一括公開日・公開時刻 ----
+// ---- 公開グループ ----
 //
-// 日付が変われば外部配信日も変わり、記事下リンクの週も変わる
+// 日付や方式が変われば外部配信日も変わり、記事下リンクの週も変わる
 
-el.pubDate.addEventListener('input', () => {
-  state.pubDate = el.pubDate.value;
-  buildRowDates();
-  renderBottomTable();
+el.pubGroupAdd.addEventListener('click', () => {
+  addPubGroup();
 });
 
-el.pubTime.addEventListener('input', () => {
-  state.pubTime = el.pubTime.value;
-  buildRowDates();
-  renderBottomTable();
+el.pubGroupBody.addEventListener('input', (event) => {
+  applyPubGroupChange(event.target);
+});
+
+el.pubGroupBody.addEventListener('change', (event) => {
+  applyPubGroupChange(event.target);
+});
+
+el.pubGroupBody.addEventListener('click', (event) => {
+  const button = event.target.closest('button.group-remove');
+
+  if (!button) return;
+
+  removePubGroup(Number(button.dataset.index));
 });
 
 // URLに ?code= が付いていれば初期表示で取得しておく。
@@ -581,69 +593,373 @@ function buildRows() {
 // ------------------------------------------------------------
 // 公開予定日時
 //
-//   GLO公開   … 一括公開日は全回そろえ、時刻を1分ずつ足す
-//                （14:00 / 14:01 / 14:02 …）
-//   外部配信  … 一括公開日から1日ずつ足す。時刻は全回同じ
+// 1本の連載を何回かに分けて一括公開することがある（管理シートでも
+// 第1〜10回が8/18、第11〜14回が8/31になっている）。
+// そのため「この回から」で区切ったグループごとに計算する。
 //
+//   一括（bulk）
+//     GLO公開   … グループの開始日でそろえ、時刻を1分ずつ足す
+//                  （14:00 / 14:01 / 14:02 …）
+//     外部配信  … 開始日から1日ずつ足す。時刻はグループで同じ
+//                  公開時刻と別の時刻を指定できる
+//
+//   毎日（daily）
+//     GLO公開・外部配信とも1日ずつ足す。分ずらしはしない。
+//     日時は同じになるので時刻は1つだけ持つ
+//
+// ずらしの起点はグループごとに戻る（第11回は再び 14:00 から）。
 // 記事下リンクの週は外部配信日で判定する。
-// 60回を超えると分が繰り上がって日付が変わるが、
-// そこは Date の繰り上げに任せて実際の日時をそのまま出す。
+// 分が60を超えたときの繰り上げは Date に任せる。
 // ------------------------------------------------------------
 
 function buildRowDates() {
-  const base = parseDateInput(state.pubDate);
-  const time = parseTimeInput(state.pubTime);
+  const groups = normalizePubGroups();
 
-  state.rows.forEach((row, index) => {
-    if (!base || !time) {
-      row.gloAt = null;
-      row.extAt = null;
-      return;
+  state.rows.forEach((row) => {
+    row.gloAt = null;
+    row.extAt = null;
+    row.groupIndex = -1;
+  });
+
+  groups.forEach((group, groupIndex) => {
+    const next = groups[groupIndex + 1];
+    const from = group.startNumber;
+    const to = next ? next.startNumber - 1 : state.rows.length;
+
+    const base = parseDateInput(group.date);
+    const gloTime = parseTimeInput(group.gloTime);
+
+    // 毎日連載は公開日時と外部配信日時が同じになる
+    const extTime =
+      group.mode === 'daily' ? gloTime : parseTimeInput(group.extTime);
+
+    for (let number = from; number <= Math.min(to, state.rows.length); number++) {
+      const row = state.rows[number - 1];
+
+      if (!row) continue;
+
+      row.groupIndex = groupIndex;
+
+      if (!base || !gloTime || !extTime) continue;
+
+      // グループの中での位置。区切るたびに0へ戻る
+      const offset = number - from;
+
+      row.gloAt =
+        group.mode === 'daily'
+          ? new Date(
+              base.getFullYear(),
+              base.getMonth(),
+              base.getDate() + offset,
+              gloTime.hh,
+              gloTime.mi
+            )
+          : new Date(
+              base.getFullYear(),
+              base.getMonth(),
+              base.getDate(),
+              gloTime.hh,
+              gloTime.mi + offset
+            );
+
+      row.extAt = new Date(
+        base.getFullYear(),
+        base.getMonth(),
+        base.getDate() + offset,
+        extTime.hh,
+        extTime.mi
+      );
     }
-
-    row.gloAt = new Date(
-      base.getFullYear(),
-      base.getMonth(),
-      base.getDate(),
-      time.hh,
-      time.mi + index
-    );
-
-    row.extAt = new Date(
-      base.getFullYear(),
-      base.getMonth(),
-      base.getDate() + index,
-      time.hh,
-      time.mi
-    );
   });
 
   renderPubStatus();
 }
 
+// グループごとに「第1〜10回：8/18 21:00〜（一括）」の形で出す。
+// 分割したときに、どの回がどの日付になったかを1行で確かめられるようにする
 function renderPubStatus() {
-  const base = parseDateInput(state.pubDate);
-  const time = parseTimeInput(state.pubTime);
+  const groups = normalizePubGroups();
+  const total = state.rows.length;
 
-  if (!base || !time) {
-    el.pubStatus.textContent = '公開日と時刻を入れると公開予定を計算します';
-    el.pubStatus.classList.remove('warn');
-    return;
-  }
-
-  const last = state.rows[state.rows.length - 1];
-
-  if (!last || !last.extAt) {
+  if (!total) {
     el.pubStatus.textContent = '';
     el.pubStatus.classList.remove('warn');
     return;
   }
 
-  // 最終回まで何日ぶんになるかは、シートの週が足りているかの目安になる
-  el.pubStatus.textContent =
-    `GLO公開：${fmtYmd(base)} ${pad2(time.hh)}:${pad2(time.mi)}〜／` +
-    `外部配信：${fmtYmd(base)}〜${fmtYmd(last.extAt)}`;
-  el.pubStatus.classList.remove('warn');
+  const parts = [];
+  let broken = false;
+
+  groups.forEach((group, groupIndex) => {
+    const next = groups[groupIndex + 1];
+    const from = group.startNumber;
+    const to = next ? next.startNumber - 1 : total;
+
+    if (from > total) {
+      broken = true;
+      parts.push(`第${from}回〜：回数（${total}回）を超えています`);
+      return;
+    }
+
+    const first = state.rows[from - 1];
+
+    if (!first || !first.gloAt) {
+      broken = true;
+      parts.push(`第${from}回〜：開始日と時刻を入力してください`);
+      return;
+    }
+
+    const last = state.rows[Math.min(to, total) - 1];
+    const label = group.mode === 'daily' ? '毎日' : '一括';
+
+    parts.push(
+      `第${from}〜${Math.min(to, total)}回：` +
+        `GLO ${fmtYmd(first.gloAt)} ${pad2(first.gloAt.getHours())}:${pad2(
+          first.gloAt.getMinutes()
+        )}〜／外部 ${fmtYmd(first.extAt)}〜${fmtYmd(last.extAt)}（${label}）`
+    );
+  });
+
+  el.pubStatus.textContent = parts.join('　');
+  el.pubStatus.classList.toggle('warn', broken);
+}
+
+// ------------------------------------------------------------
+// 公開グループの編集
+// ------------------------------------------------------------
+
+const PUB_MODES = [
+  { value: 'bulk', label: '一括' },
+  { value: 'daily', label: '毎日' },
+];
+
+// 画面の入力をそのまま使うと、開始回の重複や逆順で計算が壊れる。
+// 使う前に必ずここを通す。先頭は必ず第1回から始める
+function normalizePubGroups() {
+  const groups = Array.isArray(state.pubGroups) ? state.pubGroups : [];
+
+  const sorted = groups
+    .map((group) => ({
+      startNumber: clampEpisodeCount(group.startNumber, MIN_EPISODE_COUNT),
+      date: String(group.date || ''),
+      mode: group.mode === 'daily' ? 'daily' : 'bulk',
+      gloTime: String(group.gloTime || ''),
+      extTime: String(group.extTime || ''),
+    }))
+    .sort((a, b) => a.startNumber - b.startNumber);
+
+  if (!sorted.length) return [];
+
+  sorted[0].startNumber = 1;
+
+  // 同じ開始回が並ぶと後ろのグループが0回になる。1つ後ろへずらす
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].startNumber <= sorted[i - 1].startNumber) {
+      sorted[i].startNumber = sorted[i - 1].startNumber + 1;
+    }
+  }
+
+  return sorted;
+}
+
+function renderPubGroups() {
+  el.pubGroupBody.textContent = '';
+
+  state.pubGroups.forEach((group, index) => {
+    const tr = document.createElement('tr');
+
+    // 開始回。先頭は必ず第1回なので触らせない
+    const startCell = document.createElement('td');
+    startCell.className = 'col-ep';
+
+    const start = document.createElement('input');
+
+    start.type = 'text';
+    start.className = 'count-input mono group-start';
+    start.inputMode = 'numeric';
+    start.autocomplete = 'off';
+    start.spellcheck = false;
+    start.value = String(group.startNumber);
+    start.disabled = index === 0;
+    start.dataset.index = String(index);
+    start.dataset.field = 'startNumber';
+    start.setAttribute('aria-label', `${index + 1}つ目のグループの開始回`);
+
+    startCell.appendChild(start);
+    startCell.appendChild(createLine('回から', 'sub faint'));
+    tr.appendChild(startCell);
+
+    // 開始日
+    tr.appendChild(
+      createGroupInput('date', 'date', group.date, index, '開始日')
+    );
+
+    // 方式
+    const modeCell = document.createElement('td');
+    modeCell.className = 'col-mode';
+
+    const select = document.createElement('select');
+
+    select.className = 'group-mode';
+    select.dataset.index = String(index);
+    select.dataset.field = 'mode';
+    select.setAttribute('aria-label', `${index + 1}つ目のグループの方式`);
+
+    PUB_MODES.forEach((mode) => {
+      const option = document.createElement('option');
+
+      option.value = mode.value;
+      option.textContent = mode.label;
+
+      select.appendChild(option);
+    });
+
+    select.value = group.mode;
+
+    modeCell.appendChild(select);
+    tr.appendChild(modeCell);
+
+    // GLO公開時刻
+    tr.appendChild(
+      createGroupInput('gloTime', 'time', group.gloTime, index, 'GLO公開時刻')
+    );
+
+    // 外部配信時刻。毎日連載は公開日時と同じになるので触らせない
+    const extCell = createGroupInput(
+      'extTime',
+      'time',
+      group.mode === 'daily' ? group.gloTime : group.extTime,
+      index,
+      '外部配信時刻'
+    );
+
+    if (group.mode === 'daily') {
+      const input = extCell.children[0];
+
+      input.disabled = true;
+      input.title = '毎日連載では公開日時と同じになります';
+    }
+
+    tr.appendChild(extCell);
+
+    // 削除。先頭のグループは消せない
+    const actionCell = document.createElement('td');
+    actionCell.className = 'col-act';
+
+    if (index > 0) {
+      const remove = document.createElement('button');
+
+      remove.type = 'button';
+      remove.className = 'copy mini group-remove';
+      remove.textContent = '削除';
+      remove.dataset.index = String(index);
+      remove.setAttribute('aria-label', `${index + 1}つ目のグループを削除`);
+
+      actionCell.appendChild(remove);
+    }
+
+    tr.appendChild(actionCell);
+
+    el.pubGroupBody.appendChild(tr);
+  });
+}
+
+function createGroupInput(field, type, value, index, label) {
+  const cell = document.createElement('td');
+  cell.className = type === 'date' ? 'col-date' : 'col-time';
+
+  const input = document.createElement('input');
+
+  input.type = type;
+
+  if (type === 'time') input.step = '60';
+
+  input.className = `group-${field}`;
+  input.value = value || '';
+  input.dataset.index = String(index);
+  input.dataset.field = field;
+  input.setAttribute('aria-label', `${index + 1}つ目のグループの${label}`);
+
+  cell.appendChild(input);
+
+  return cell;
+}
+
+function applyPubGroupChange(target) {
+  if (!target || !target.dataset) return;
+
+  const index = Number(target.dataset.index);
+  const field = target.dataset.field;
+  const group = state.pubGroups[index];
+
+  if (!group || !field) return;
+
+  if (field === 'startNumber') {
+    const value = parseCountInput(target.value);
+
+    // 入力途中（空欄など）はまだ反映しない
+    if (!Number.isFinite(value) || value < MIN_EPISODE_COUNT) return;
+
+    group.startNumber = clampEpisodeCount(value, MIN_EPISODE_COUNT);
+  } else if (field === 'mode') {
+    group.mode = target.value === 'daily' ? 'daily' : 'bulk';
+
+    // 毎日連載に変えたら外部配信時刻は公開時刻に合わせる
+    if (group.mode === 'daily') group.extTime = group.gloTime;
+
+    renderPubGroups();
+  } else {
+    group[field] = target.value;
+
+    // 一括で外部配信時刻を空のままにしておくと計算できないので、
+    // 公開時刻を変えたときは同じ時刻を初期値として入れておく
+    if (field === 'gloTime' && !group.extTime) {
+      group.extTime = target.value;
+      renderPubGroups();
+    }
+  }
+
+  buildRowDates();
+  renderBottomTable();
+}
+
+function addPubGroup() {
+  const groups = normalizePubGroups();
+  const last = groups[groups.length - 1];
+
+  // 直前のグループの次の回から始める。回数を超えるときは最終回に寄せる
+  const startNumber = Math.min(
+    last ? last.startNumber + 1 : 1,
+    Math.max(state.rows.length, MIN_EPISODE_COUNT)
+  );
+
+  const previous = state.pubGroups[state.pubGroups.length - 1];
+
+  state.pubGroups.push({
+    startNumber,
+
+    // 日付は引き継がない。前のグループと同じ日付のまま気づかず使うのを避ける
+    date: '',
+    mode: (previous && previous.mode) || 'bulk',
+    gloTime: (previous && previous.gloTime) || '21:00',
+    extTime: (previous && previous.extTime) || '21:00',
+  });
+
+  renderPubGroups();
+  buildRowDates();
+  renderBottomTable();
+}
+
+function removePubGroup(index) {
+  // 先頭のグループは第1回の起点なので消せない
+  if (!Number.isInteger(index) || index <= 0) return;
+  if (!state.pubGroups[index]) return;
+
+  state.pubGroups.splice(index, 1);
+
+  renderPubGroups();
+  buildRowDates();
+  renderBottomTable();
 }
 
 function parseDateInput(value) {
@@ -715,11 +1031,17 @@ function fmtPeriodRange(period) {
 
 // 起動時の既定値。GLOの一括公開は21時が多いので21:00にしておく
 function initPubFields() {
-  state.pubDate = fmtDateInput(new Date());
-  state.pubTime = '21:00';
+  state.pubGroups = [
+    {
+      startNumber: 1,
+      date: fmtDateInput(new Date()),
+      mode: 'bulk',
+      gloTime: '21:00',
+      extTime: '21:00',
+    },
+  ];
 
-  el.pubDate.value = state.pubDate;
-  el.pubTime.value = state.pubTime;
+  renderPubGroups();
 }
 
 // 行を作り直す前に、今表示している入力を回数ごとに退避する。
@@ -1152,6 +1474,9 @@ function renderBottomTable() {
     if (row.isFinal) tr.classList.add('is-final');
     if (needsAttention(link, reason)) tr.classList.add('is-flag');
 
+    // 公開グループの切れ目が表の上で分かるようにする
+    if (isGroupStartRow(row)) tr.classList.add('is-group-start');
+
     tr.appendChild(createCell(row.label, 'col-ep ep-no'));
     tr.appendChild(createPlannedCell(row));
     tr.appendChild(createNextCell(link));
@@ -1179,6 +1504,15 @@ function renderBottomTable() {
 
     el.bottomBody.appendChild(tr);
   }
+}
+
+// 2つ目以降のグループの先頭かどうか。表に区切り線を引くために使う
+function isGroupStartRow(row) {
+  if (!row || row.groupIndex <= 0) return false;
+
+  const previous = state.rows[row.number - 2];
+
+  return !previous || previous.groupIndex !== row.groupIndex;
 }
 
 // そのまま貼れない回かどうか。
@@ -1331,7 +1665,7 @@ function createSheetCell(row, hit, bottomHtml) {
 
   if (!row.extAt) {
     cell.appendChild(
-      createLine('記事下リンク：公開日と時刻を入力してください', 'warn')
+      createLine('記事下リンク：このグループの開始日と時刻を入力してください', 'warn')
     );
     return cell;
   }
@@ -1406,7 +1740,7 @@ function sheetBlockReason(row, hit, bottomHtml) {
   }
 
   if (!row || !row.extAt) {
-    return '公開日と時刻を入力してください';
+    return 'このグループの開始日と時刻を入力してください';
   }
 
   if (!hit) {
@@ -1434,7 +1768,7 @@ function createPlannedCell(row) {
   cell.className = 'col-date';
 
   if (!row.gloAt || !row.extAt) {
-    cell.appendChild(createLine('—', 'warn', '公開日と時刻を入力してください'));
+    cell.appendChild(createLine('—', 'warn', 'このグループの開始日と時刻を入力してください'));
     return cell;
   }
 

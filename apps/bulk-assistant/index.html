@@ -10,7 +10,7 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.0.3</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.0.4</span></h1>
 
     <div class="search-row">
       <label for="code-input">カテゴリコード</label>
@@ -145,28 +145,40 @@
     <!-- ---- ② この話の続き ---- -->
     <div class="tabpanel" id="panel-bottom" role="tabpanel" aria-labelledby="tab-bottom" hidden>
 
-      <!-- GLO公開は一括公開日に固定して1分ずつ、外部配信は1日ずつずらす。
+      <!-- 1本の連載を何回かに分けて一括公開することがあるので、
+           「この回から」で区切ったグループごとに日付と方式を決める。
            記事下リンクの週は外部配信日で判定する -->
-      <div class="next-settings">
+      <div class="next-settings pub-groups">
         <div class="next-field">
-          <label for="pub-date">GLO一括公開日</label>
-          <input id="pub-date" type="date">
+          <span class="count-label">公開グループ</span>
+          <button type="button" id="pub-group-add" class="copy mini">グループを追加</button>
+          <span id="pub-status" class="note"></span>
         </div>
 
-        <div class="next-field">
-          <label for="pub-time">公開時刻</label>
-          <input id="pub-time" type="time" step="60">
-        </div>
-
-        <span id="pub-status" class="note"></span>
+        <table class="grid grid-groups">
+          <thead>
+            <tr>
+              <th class="col-ep">開始回</th>
+              <th class="col-date">開始日</th>
+              <th class="col-mode">方式</th>
+              <th class="col-time">GLO公開時刻</th>
+              <th class="col-time">外部配信時刻</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="pub-group-body"></tbody>
+        </table>
       </div>
 
       <dl class="hint hint-defs">
-        <dt>GLO公開日時</dt>
-        <dd>日付は一括公開日で全回そろえ、時刻だけ1分ずつずらします（14:00／14:01／14:02…）。</dd>
+        <dt>公開グループ</dt>
+        <dd>第11回から日付を変えて追加公開する、といった分割に使います。「グループを追加」で区切りを増やし、開始回・開始日・方式をグループごとに決めます。</dd>
 
-        <dt>外部配信日時</dt>
-        <dd>一括公開日から1日ずつずらします。時刻は全回同じです。</dd>
+        <dt>方式：一括</dt>
+        <dd>GLO公開はグループの開始日でそろえ、時刻を1分ずつずらします（14:00／14:01／14:02…）。外部配信は開始日から1日ずつずらします。</dd>
+
+        <dt>方式：毎日</dt>
+        <dd>毎日連載のときに使います。GLO公開も外部配信も1日ずつ進み、日時は同じになります。分ずらしはしません。</dd>
 
         <dt>この話の続きを読む</dt>
         <dd>①タブに入れた「次の回」の記事ID・記事タイトルを使います。最後の行は最終回として文言に差し替えます。</dd>

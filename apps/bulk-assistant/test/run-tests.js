@@ -174,6 +174,8 @@ const APP_SOURCE =
   buildNextArticleHtml, buildFinalEpisodeHtml, joinBottomHtml,
   buildArticleBottomHtml, removeDroppedParagraphs, getListTarget,
   buildRowDates, initPubFields, parseDateInput, parseTimeInput, fmtDateInput,
+  renderPubGroups, normalizePubGroups, addPubGroup, removePubGroup,
+  applyPubGroupChange, isGroupStartRow,
   findSheetRowForRow, parsePeriodParts, assignRowYears, fmtPeriodRange, fmtYmd,
   findRiskyTitleParts, switchTab, escapeHtml,
 };
@@ -291,11 +293,23 @@ function setup(options = {}) {
 
   state.series = options.series === undefined ? SERIES : options.series;
 
-  state.pubDate = options.pubDate === undefined ? PUB_DATE : options.pubDate;
-  state.pubTime = options.pubTime === undefined ? PUB_TIME : options.pubTime;
+  const time = options.pubTime === undefined ? PUB_TIME : options.pubTime;
 
-  app.el.pubDate.value = state.pubDate;
-  app.el.pubTime.value = state.pubTime;
+  // グループはアプリ側で書き換わる（追加・削除・並べ替え）。
+  // テスト間で共有すると前のテストの結果を引きずるのでコピーを渡す
+  state.pubGroups = options.pubGroups
+    ? options.pubGroups.map((group) => ({ ...group }))
+    : [
+    {
+      startNumber: 1,
+      date: options.pubDate === undefined ? PUB_DATE : options.pubDate,
+      mode: options.mode || 'bulk',
+      gloTime: time,
+      extTime: options.extTime === undefined ? time : options.extTime,
+    },
+  ];
+
+  app.renderPubGroups();
 
   if (options.episodeCount) app.setEpisodeCount(options.episodeCount);
 
@@ -1305,13 +1319,366 @@ check('公開日が空なら公開予定を出さずコピーも止める', () =
   return (
     (app.state.rows[0].gloAt === null &&
       row.button.disabled === true &&
-      row.button.title.includes('公開日と時刻を入力してください')) ||
+      row.button.title.includes('このグループの開始日と時刻を入力してください')) ||
     `→ ${row.button.title}`
   );
 });
 
 // ============================================================
-// 11. 記事下リンクの週判定（外部配信日で引く）
+// 11. 公開グループ（分割公開）
+// ============================================================
+
+group('公開グループ');
+
+// 管理シートの実例。第1〜10回が8/18 21:00、第11〜14回が8/31 14:00
+const SPLIT_GROUPS = [
+  {
+    startNumber: 1,
+    date: '2026-08-18',
+    mode: 'bulk',
+    gloTime: '21:00',
+    extTime: '21:00',
+  },
+  {
+    startNumber: 11,
+    date: '2026-08-31',
+    mode: 'bulk',
+    gloTime: '14:00',
+    extTime: '14:00',
+  },
+];
+
+// 日時を「2026/08/18 21:00」の形で取り出す
+function stamp(app, date) {
+  if (!date) return 'なし';
+
+  return `${app.fmtYmd(date)} ${String(date.getHours()).padStart(
+    2,
+    '0'
+  )}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+check('① 日付を変えて同じロジックで追加できる', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  const got = [10, 11, 12, 13].map(
+    (i) => `${stamp(app, app.state.rows[i].gloAt)}／${stamp(app, app.state.rows[i].extAt)}`
+  );
+
+  return (
+    got.join(' | ') ===
+      [
+        '2026/08/31 14:00／2026/08/31 14:00',
+        '2026/08/31 14:01／2026/09/01 14:00',
+        '2026/08/31 14:02／2026/09/02 14:00',
+        '2026/08/31 14:03／2026/09/03 14:00',
+      ].join(' | ') || `→ ${got.join(' | ')}`
+  );
+});
+
+check('ずらしの起点はグループごとに戻る', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  // 第10回は 21:09（1つ目の10本目）、第11回は 14:00（2つ目の1本目）
+  return (
+    (stamp(app, app.state.rows[9].gloAt) === '2026/08/18 21:09' &&
+      stamp(app, app.state.rows[10].gloAt) === '2026/08/31 14:00') ||
+    `→ ${stamp(app, app.state.rows[9].gloAt)} / ${stamp(
+      app,
+      app.state.rows[10].gloAt
+    )}`
+  );
+});
+
+check('前のグループは後ろのグループの手前で終わる', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  const groups = app.state.rows.map((row) => row.groupIndex);
+
+  return (
+    groups.join('') === '00000000001111' || `→ ${groups.join('')}`
+  );
+});
+
+check('② 公開時刻と外部配信時刻を別にできる', () => {
+  const app = setup({
+    episodeCount: 4,
+    pubGroups: [
+      {
+        startNumber: 1,
+        date: '2026-08-31',
+        mode: 'bulk',
+        gloTime: '14:00',
+        extTime: '21:00',
+      },
+    ],
+  });
+
+  const got = app.state.rows.map(
+    (row) => `${stamp(app, row.gloAt)}／${stamp(app, row.extAt)}`
+  );
+
+  return (
+    got.join(' | ') ===
+      [
+        '2026/08/31 14:00／2026/08/31 21:00',
+        '2026/08/31 14:01／2026/09/01 21:00',
+        '2026/08/31 14:02／2026/09/02 21:00',
+        '2026/08/31 14:03／2026/09/03 21:00',
+      ].join(' | ') || `→ ${got.join(' | ')}`
+  );
+});
+
+check('③ 毎日連載は1日ずつ・分ずらし無し・公開と外部配信が同一', () => {
+  const app = setup({
+    episodeCount: 4,
+    pubGroups: [
+      {
+        startNumber: 1,
+        date: '2026-08-31',
+        mode: 'daily',
+        gloTime: '14:00',
+        extTime: '14:00',
+      },
+    ],
+  });
+
+  const got = app.state.rows.map(
+    (row) => `${stamp(app, row.gloAt)}／${stamp(app, row.extAt)}`
+  );
+
+  return (
+    got.join(' | ') ===
+      [
+        '2026/08/31 14:00／2026/08/31 14:00',
+        '2026/09/01 14:00／2026/09/01 14:00',
+        '2026/09/02 14:00／2026/09/02 14:00',
+        '2026/09/03 14:00／2026/09/03 14:00',
+      ].join(' | ') || `→ ${got.join(' | ')}`
+  );
+});
+
+check('毎日連載では外部配信時刻の指定を無視して公開時刻に合わせる', () => {
+  const app = setup({
+    episodeCount: 2,
+    pubGroups: [
+      {
+        startNumber: 1,
+        date: '2026-08-31',
+        mode: 'daily',
+        gloTime: '14:00',
+        // 残っていても使わない
+        extTime: '21:00',
+      },
+    ],
+  });
+
+  return (
+    stamp(app, app.state.rows[0].extAt) === '2026/08/31 14:00' ||
+    `→ ${stamp(app, app.state.rows[0].extAt)}`
+  );
+});
+
+check('一括と毎日を混ぜられる', () => {
+  const app = setup({
+    episodeCount: 6,
+    pubGroups: [
+      {
+        startNumber: 1,
+        date: '2026-08-18',
+        mode: 'bulk',
+        gloTime: '21:00',
+        extTime: '21:00',
+      },
+      {
+        startNumber: 4,
+        date: '2026-08-31',
+        mode: 'daily',
+        gloTime: '14:00',
+        extTime: '14:00',
+      },
+    ],
+  });
+
+  const got = app.state.rows.map((row) => stamp(app, row.gloAt));
+
+  return (
+    got.join(' | ') ===
+      [
+        '2026/08/18 21:00',
+        '2026/08/18 21:01',
+        '2026/08/18 21:02',
+        '2026/08/31 14:00',
+        '2026/09/01 14:00',
+        '2026/09/02 14:00',
+      ].join(' | ') || `→ ${got.join(' | ')}`
+  );
+});
+
+check('開始回が逆順でも並べ直して使う', () => {
+  const app = setup({
+    episodeCount: 6,
+    pubGroups: [
+      {
+        startNumber: 4,
+        date: '2026-08-31',
+        mode: 'bulk',
+        gloTime: '14:00',
+        extTime: '14:00',
+      },
+      {
+        startNumber: 1,
+        date: '2026-08-18',
+        mode: 'bulk',
+        gloTime: '21:00',
+        extTime: '21:00',
+      },
+    ],
+  });
+
+  const groups = app.normalizePubGroups().map((g) => g.startNumber);
+
+  return (
+    (groups.join(',') === '1,4' &&
+      stamp(app, app.state.rows[0].gloAt) === '2026/08/18 21:00') ||
+    `→ ${groups.join(',')} / ${stamp(app, app.state.rows[0].gloAt)}`
+  );
+});
+
+check('先頭のグループは必ず第1回から始める', () => {
+  const app = setup({
+    episodeCount: 4,
+    pubGroups: [
+      {
+        startNumber: 3,
+        date: '2026-08-18',
+        mode: 'bulk',
+        gloTime: '21:00',
+        extTime: '21:00',
+      },
+    ],
+  });
+
+  return (
+    (app.normalizePubGroups()[0].startNumber === 1 &&
+      app.state.rows[0].gloAt !== null) ||
+    '→ 第1回に日付が入りません'
+  );
+});
+
+check('開始回が重なったら1つ後ろへずらす', () => {
+  const app = setup({
+    episodeCount: 6,
+    pubGroups: [
+      {
+        startNumber: 1,
+        date: '2026-08-18',
+        mode: 'bulk',
+        gloTime: '21:00',
+        extTime: '21:00',
+      },
+      {
+        startNumber: 1,
+        date: '2026-08-31',
+        mode: 'bulk',
+        gloTime: '14:00',
+        extTime: '14:00',
+      },
+    ],
+  });
+
+  const groups = app.normalizePubGroups().map((g) => g.startNumber);
+
+  return groups.join(',') === '1,2' || `→ ${groups.join(',')}`;
+});
+
+check('グループを追加すると直前の次の回から始まる', () => {
+  const app = setup({ episodeCount: 14 });
+
+  app.el.pubGroupAdd.dispatch('click');
+
+  return (
+    (app.state.pubGroups.length === 2 &&
+      app.state.pubGroups[1].startNumber === 2 &&
+      app.state.pubGroups[1].date === '') ||
+    `→ ${JSON.stringify(app.state.pubGroups[1])}`
+  );
+});
+
+check('グループを削除すると前のグループが最後まで受け持つ', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  app.removePubGroup(1);
+
+  return (
+    (app.state.pubGroups.length === 1 &&
+      stamp(app, app.state.rows[13].gloAt) === '2026/08/18 21:13') ||
+    `→ ${app.state.pubGroups.length} / ${stamp(app, app.state.rows[13].gloAt)}`
+  );
+});
+
+check('先頭のグループは削除できない', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  app.removePubGroup(0);
+
+  return app.state.pubGroups.length === 2 || `→ ${app.state.pubGroups.length}`;
+});
+
+check('2つ目のグループの先頭行に区切りを付ける', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  const flags = app.state.rows.map((row) =>
+    app.isGroupStartRow(row) ? '1' : '0'
+  );
+
+  return flags.join('') === '00000000001000' || `→ ${flags.join('')}`;
+});
+
+check('回数を超えたグループは理由を出す', () => {
+  const app = setup({ episodeCount: 5, pubGroups: SPLIT_GROUPS });
+
+  return (
+    (app.el.pubStatus.textContent.includes('回数（5回）を超えています') &&
+      app.el.pubStatus.classList.contains('warn')) ||
+    `→ ${app.el.pubStatus.textContent}`
+  );
+});
+
+check('グループごとの範囲を1行で確かめられる', () => {
+  const app = setup({ episodeCount: 14, pubGroups: SPLIT_GROUPS });
+
+  const text = app.el.pubStatus.textContent;
+
+  return (
+    (text.includes('第1〜10回') &&
+      text.includes('第11〜14回') &&
+      text.includes('（一括）')) ||
+    `→ ${text}`
+  );
+});
+
+check('分割すると記事下の週もグループごとに切り替わる', () => {
+  const app = setup({
+    episodeCount: 12,
+    pubGroups: SPLIT_GROUPS,
+    sheetRows: [
+      ['8月第三週\n8/16（日）〜8/22（土）', makeC('41111')],
+      ['8月第四週\n8/23（日）〜8/29（土）', makeC('42222')],
+      ['9月第一週\n8/30（日）〜9/5（土）', makeC('43333')],
+    ],
+  });
+
+  // 第1回 外部8/18 → 8/16〜、第11回 外部8/31 → 8/30〜
+  return (
+    (weekHtmlOf(app, 0).includes('/articles/-/41111') &&
+      weekHtmlOf(app, 10).includes('/articles/-/43333')) ||
+    '→ グループごとに週が切り替わっていません'
+  );
+});
+
+// ============================================================
+// 12. 記事下リンクの週判定（外部配信日で引く）
 // ============================================================
 
 group('記事下リンクの週判定');
