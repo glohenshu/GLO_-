@@ -1,5 +1,5 @@
 // ============================================================
-// 新規一括集中アシスタント Ver.0.2 ── データ取得API
+// 新規一括集中アシスタント Ver.1.0 ── データ取得API
 //
 // 新規連載なので参照元の過去連載は無い。取りに行くのは2つだけ。
 //
@@ -25,26 +25,32 @@ export default async function handler(req, res) {
 
   const categoryCode = String(req.query.code || '').trim();
 
+  // 書籍名の部分一致で連載候補を出すための検索語
+  const query = String(req.query.q || '').trim();
+
   // ?summary=1 は診断用。rows を返さず件数と末尾の期間だけ見る
   const summaryOnly = String(req.query.summary || '') === '1';
 
-  if (!categoryCode) {
-    return res.status(400).json({
-      status: 'error',
-      error: 'カテゴリコードを指定してください',
-    });
-  }
-
+  // code も q も無いときはスプレッドシートだけ返す。
+  // 記事下リンクの週は外部配信日で決まるので、連載を選ぶ前から使える
   const result = {
     status: 'ok',
 
     categoryCode,
+    query,
 
     // GLO連載情報アプリ（今回作る一括集中連載）
     series: {
       status: 'error',
       message: '',
       data: null,
+    },
+
+    // 書籍名の部分一致で拾った連載候補
+    candidates: {
+      status: 'error',
+      message: '',
+      items: [],
     },
 
     // Googleスプレッドシート「毎月の記事下リンク」
@@ -64,60 +70,67 @@ export default async function handler(req, res) {
 
   // ============================================================
   // 1. GLO連載情報アプリ
+  //
+  // code があればその1件を、q があれば書籍名の部分一致で候補を返す。
+  // どちらも無いときはkintoneを見ない（スプレッドシートだけ返す）
   // ============================================================
 
-  try {
-    if (!base || !seriesToken || !seriesAppId) {
-      throw new Error(
-        'kintoneの環境変数（KINTONE_BASE_URL / KINTONE_API_TOKEN / KINTONE_APP_ID）が未設定です'
-      );
+  if (categoryCode) {
+    try {
+      requireKintoneEnv(base, seriesToken, seriesAppId);
+
+      const records = await fetchRecords({
+        base,
+        token: seriesToken,
+        appId: seriesAppId,
+        query: `カテゴリID = "${escapeQueryValue(categoryCode)}"`,
+      });
+
+      if (!records.length) {
+        throw new Error(`カテゴリID「${categoryCode}」のレコードが見つかりません`);
+      }
+
+      const seriesData = mapSeries(records[0], base, seriesAppId, categoryCode);
+
+      result.series = {
+        status: 'ok',
+        message: '',
+        data: seriesData,
+      };
+
+      // 書籍タイトルは記事下の『』に入る。無いと一覧リンクが作れない
+      if (!seriesData.bookTitle) {
+        result.warnings.push('書籍タイトルが未登録です');
+      }
+    } catch (e) {
+      result.series.message = String(e.message || e);
     }
+  } else if (query) {
+    try {
+      requireKintoneEnv(base, seriesToken, seriesAppId);
 
-    const query = `カテゴリID = "${escapeQueryValue(categoryCode)}"`;
+      // kintoneの like は部分一致。件数が多い連載でも拾えるよう上限は多めにする
+      const records = await fetchRecords({
+        base,
+        token: seriesToken,
+        appId: seriesAppId,
+        query: `書籍タイトル like "${escapeQueryValue(query)}" limit 100`,
+      });
 
-    const records = await fetchRecords({
-      base,
-      token: seriesToken,
-      appId: seriesAppId,
-      query,
-    });
+      // 新しく登録したものほど上に出したいので、レコード番号の降順に並べる。
+      // order by をクエリに入れるとフィールド名の違いで落ちうるのでこちらで並べる
+      const items = records
+        .map((record) => mapSeries(record, base, seriesAppId, ''))
+        .sort((a, b) => Number(b.recordId) - Number(a.recordId));
 
-    if (!records.length) {
-      throw new Error(`カテゴリID「${categoryCode}」のレコードが見つかりません`);
+      result.candidates = {
+        status: 'ok',
+        message: items.length ? '' : `「${query}」に一致する連載がありません`,
+        items,
+      };
+    } catch (e) {
+      result.candidates.message = String(e.message || e);
     }
-
-    const record = records[0];
-
-    const seriesData = {
-      recordId: record['$id']?.value || '',
-
-      categoryCode: record['カテゴリID']?.value || categoryCode,
-
-      bookTitle: record['書籍タイトル']?.value || '',
-
-      // 一括集中の日付の扱いは未確定。取得だけしておき、画面では使わない
-      firstDeliveryAt: record['第1回配信日時']?.value || '',
-
-      productionNo: record['制作No']?.value || '',
-    };
-
-    // kintone該当レコードへの確認用リンク
-    seriesData.kintoneUrl = seriesData.recordId
-      ? `${base}/k/${seriesAppId}/show#record=${seriesData.recordId}`
-      : '';
-
-    result.series = {
-      status: 'ok',
-      message: '',
-      data: seriesData,
-    };
-
-    // 書籍タイトルは記事下の『』に入る。無いと一覧リンクが作れない
-    if (!seriesData.bookTitle) {
-      result.warnings.push('書籍タイトルが未登録です');
-    }
-  } catch (e) {
-    result.series.message = String(e.message || e);
   }
 
   // ============================================================
@@ -146,6 +159,15 @@ export default async function handler(req, res) {
         status: result.series.status,
         message: result.series.message,
         bookTitle: (result.series.data && result.series.data.bookTitle) || '',
+      },
+
+      candidates: {
+        status: result.candidates.status,
+        message: result.candidates.message,
+        count: result.candidates.items.length,
+        sample: result.candidates.items
+          .slice(0, 5)
+          .map((item) => `${item.categoryCode}／${item.bookTitle}`),
       },
 
       // 記事下が取れない原因を切り分けるための最小限の情報
@@ -298,8 +320,40 @@ async function fetchRecords({ base, token, appId, query, fields }) {
 }
 
 // ============================================================
+// GLO連載情報アプリのレコード → アプリ内形式
+// ============================================================
+
+function mapSeries(record, base, appId, fallbackCode) {
+  const recordId = record['$id']?.value || '';
+
+  return {
+    recordId,
+
+    categoryCode: record['カテゴリID']?.value || fallbackCode,
+
+    bookTitle: record['書籍タイトル']?.value || '',
+
+    // 一括集中の日付は画面の公開グループで決める。取得だけしておく
+    firstDeliveryAt: record['第1回配信日時']?.value || '',
+
+    productionNo: record['制作No']?.value || '',
+
+    // kintone該当レコードへの確認用リンク
+    kintoneUrl: recordId ? `${base}/k/${appId}/show#record=${recordId}` : '',
+  };
+}
+
+// ============================================================
 // 小物
 // ============================================================
+
+function requireKintoneEnv(base, token, appId) {
+  if (!base || !token || !appId) {
+    throw new Error(
+      'kintoneの環境変数（KINTONE_BASE_URL / KINTONE_API_TOKEN / KINTONE_APP_ID）が未設定です'
+    );
+  }
+}
 
 function envValue(name) {
   return String(process.env[name] || '').trim();

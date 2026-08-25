@@ -10,25 +10,30 @@
 
 <header class="topbar">
   <div class="topbar-inner">
-    <h1>新規一括集中アシスタント <span class="ver">Ver.0.9</span></h1>
+    <h1>新規一括集中アシスタント <span class="ver">Ver.1.0</span></h1>
 
+    <!-- 数字だけならカテゴリコード、それ以外は書籍名の部分一致で候補を出す -->
     <div class="search-row">
-      <label for="code-input">カテゴリコード</label>
+      <label for="search-input">連載を探す</label>
 
-      <!-- gr は固定。入力するのは数字だけにする -->
-      <span class="code-field">
-        <span class="code-prefix" aria-hidden="true">gr</span>
-        <input id="code-input" type="text" inputmode="numeric" placeholder="1974"
-               autocomplete="off" spellcheck="false" maxlength="8"
-               aria-label="カテゴリコードの数字（grは不要）">
-      </span>
-      <button id="fetch-btn" class="primary">情報取得</button>
+      <input id="search-input" type="text" class="search-input"
+             placeholder="書籍名の一部、またはカテゴリコード（1974）"
+             autocomplete="off" spellcheck="false"
+             aria-label="書籍名の一部、またはカテゴリコード">
+
+      <button id="fetch-btn" class="primary">検索</button>
       <span id="fetch-status" class="fetch-status" role="status"></span>
     </div>
   </div>
 </header>
 
 <main class="content">
+
+  <!-- 連載候補（書籍名で検索したとき） -->
+  <section id="candidates" class="block candidates" hidden>
+    <p class="candidates-head">連載候補</p>
+    <ul id="candidates-list" class="candidates-list"></ul>
+  </section>
 
   <!-- 警告 -->
   <div id="warnings" class="warnings" hidden>

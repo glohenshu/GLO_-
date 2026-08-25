@@ -139,6 +139,86 @@ h1 .ver {
 /* 枠は .code-field 側に出す */
 #code-input:focus-visible { outline: none; }
 
+/* 書籍名でもカテゴリコードでも打てる1つの検索欄 */
+.search-input {
+  flex: 1 1 340px;
+  min-width: 0;
+  max-width: 460px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* ---- 連載候補 ---- */
+
+.candidates {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 16px 14px;
+  margin-bottom: 16px;
+}
+
+.candidates-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+  margin-bottom: 6px;
+}
+
+.candidates-list { list-style: none; }
+
+.candidates-list li + li { margin-top: 4px; }
+
+.candidate {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.candidate:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.candidate:disabled { color: var(--faint); cursor: default; }
+
+.candidate-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.candidate-meta {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
 .fetch-status { font-size: 12px; color: var(--sub); }
 .fetch-status.error { color: var(--warn); }
 

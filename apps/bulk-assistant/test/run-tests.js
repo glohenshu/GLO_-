@@ -167,7 +167,7 @@ const APP_SOURCE =
   PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, TAB_NAMES, FINAL_MESSAGE,
   clampEpisodeCount, parseCountInput, setEpisodeCount, commitCountInput,
   syncBulkInputs, setBulkStatus,
-  getCategoryCode, toCategoryDigits, hasUnusableCodeChars,
+  getCategoryCode, toCategoryDigits, isCodeQuery, renderCandidates,
   buildRows, renderPrevTable, updatePrevRow, renderCommon,
   applyBulkIds, clearArticleIds,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
@@ -214,7 +214,9 @@ function loadApp() {
     location: { search: '' },
     history: { replaceState() {} },
     navigator: {},
-    fetch: () => Promise.reject(new Error('テストではAPIを呼ばない')),
+    // 起動時のシート取得が後から表を作り直すと、テストの途中で状態が入れ替わる。
+    // 決着しないPromiseを返して、通信は起きなかったものとして扱う
+    fetch: () => new Promise(() => {}),
   };
 
   sandbox.window = sandbox;
@@ -419,12 +421,12 @@ function check(name, fn) {
 // 1. カテゴリコード入力
 // ============================================================
 
-group('カテゴリコード入力');
+group('連載の検索');
 
 check('数字だけ入力すると gr を付けて問い合わせる', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '1974';
+  app.el.searchInput.value = '1974';
 
   return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
 });
@@ -433,7 +435,7 @@ check('gr 付きで貼り付けても二重にならない', () => {
   const app = loadApp();
 
   const got = ['gr1974', 'GR1974', ' gr1974 '].map((value) => {
-    app.el.codeInput.value = value;
+    app.el.searchInput.value = value;
     return app.getCategoryCode();
   });
 
@@ -443,19 +445,87 @@ check('gr 付きで貼り付けても二重にならない', () => {
 check('全角数字を半角に直す', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '１９７４';
+  app.el.searchInput.value = '１９７４';
 
   return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
 });
 
-check('直しようがない文字だけ理由を出す', () => {
+check('数字だけならコード、それ以外は書籍名の検索に回す', () => {
   const app = loadApp();
 
+  const code = ['1974', 'gr1974', 'GR1974', '１９７４', ' 1974 '];
+  const text = ['母が母', '母が母でなくなった日', 'gr', '七つの2', ''];
+
   return (
-    (app.hasUnusableCodeChars('19a74') === true &&
-      app.hasUnusableCodeChars('１９７４') === false &&
-      app.hasUnusableCodeChars('gr1974') === false) ||
+    (code.every((v) => app.isCodeQuery(v) === true) &&
+      text.every((v) => app.isCodeQuery(v) === false)) ||
     '→ 判定が違います'
+  );
+});
+
+check('候補を出して、押すとその連載のコードが分かる', () => {
+  const app = loadApp();
+
+  app.renderCandidates([
+    {
+      recordId: '2161',
+      categoryCode: 'gr1974',
+      bookTitle: '母が母でなくなった日',
+      productionNo: '22818',
+    },
+    {
+      recordId: '2100',
+      categoryCode: 'gr1900',
+      bookTitle: '母が母でなくなった日（続）',
+      productionNo: '22000',
+    },
+  ]);
+
+  const buttons = findNodes(
+    app.el.candidatesList,
+    (node) => node.tagName === 'BUTTON'
+  );
+
+  return (
+    (app.el.candidates.hidden === false &&
+      buttons.length === 2 &&
+      buttons[0].dataset.code === 'gr1974' &&
+      textOf(buttons[0]).includes('母が母でなくなった日') &&
+      textOf(buttons[0]).includes('制作No 22818')) ||
+    `→ ${buttons.length} / ${textOf(buttons[0])}`
+  );
+});
+
+check('カテゴリIDが無い候補は選べない', () => {
+  const app = loadApp();
+
+  app.renderCandidates([
+    { recordId: '1', categoryCode: '', bookTitle: 'コード未登録の連載' },
+  ]);
+
+  const button = findNodes(
+    app.el.candidatesList,
+    (node) => node.tagName === 'BUTTON'
+  )[0];
+
+  return (
+    (button.disabled === true && button.title.includes('カテゴリID')) ||
+    `→ ${button.disabled} / ${button.title}`
+  );
+});
+
+check('候補が無ければ一覧そのものを閉じる', () => {
+  const app = loadApp();
+
+  app.renderCandidates([
+    { recordId: '1', categoryCode: 'gr1', bookTitle: 'あ' },
+  ]);
+  app.renderCandidates([]);
+
+  return (
+    (app.el.candidates.hidden === true &&
+      app.el.candidatesList.children.length === 0) ||
+    '→ 一覧が残っています'
   );
 });
 

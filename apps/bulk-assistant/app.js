@@ -1,5 +1,5 @@
 /* ============================================================
-   新規一括集中アシスタント Ver.0.9
+   新規一括集中アシスタント Ver.1.0
 
    新規の一括集中連載をMediaWeaverで作るときの作業支援ツール。
    再掲連載作成アシスタント（apps/reprint-assistant）をもとにしているが、
@@ -84,9 +84,12 @@ const state = {
 // ------------------------------------------------------------
 
 const el = {
-  codeInput: document.getElementById('code-input'),
+  searchInput: document.getElementById('search-input'),
   fetchBtn: document.getElementById('fetch-btn'),
   fetchStatus: document.getElementById('fetch-status'),
+
+  candidates: document.getElementById('candidates'),
+  candidatesList: document.getElementById('candidates-list'),
 
   warnings: document.getElementById('warnings'),
   warningsList: document.getElementById('warnings-list'),
@@ -135,32 +138,34 @@ const el = {
 // ------------------------------------------------------------
 
 el.fetchBtn.addEventListener('click', () => {
-  fetchSeriesData();
+  runSearch();
 });
 
-// 入力できるのは半角数字だけ。
-// 全角数字と、貼り付けで付いてくる gr は黙って直し、
-// それ以外の文字が混ざっていたときだけ理由を出す
-el.codeInput.addEventListener('input', () => {
-  const raw = el.codeInput.value;
-  const digits = toCategoryDigits(raw);
-
-  if (digits !== raw) {
-    el.codeInput.value = digits;
-
-    if (hasUnusableCodeChars(raw)) {
-      setStatus('カテゴリコードは半角数字で入力してください（grは不要）', true);
-      return;
-    }
-  }
-
+// 数字だけならカテゴリコード、それ以外は書籍名の部分一致で検索する。
+// 打ち直しはじめたらエラー表示だけ消す
+el.searchInput.addEventListener('input', () => {
   if (el.fetchStatus.classList.contains('error')) setStatus('');
 });
 
-el.codeInput.addEventListener('keydown', (event) => {
+el.searchInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
-    fetchSeriesData();
+    runSearch();
   }
+});
+
+// 候補は「押したらその連載を読み込む」だけ。押した後は一覧を閉じる
+el.candidatesList.addEventListener('click', (event) => {
+  const button = event.target.closest('button.candidate');
+
+  if (!button) return;
+
+  const code = button.dataset.code;
+
+  if (!code) return;
+
+  el.searchInput.value = toCategoryDigits(code) || code;
+
+  fetchSeriesData(code);
 });
 
 el.tabButtons.forEach((button) => {
@@ -289,24 +294,37 @@ el.pubGroupBody.addEventListener('click', (event) => {
 });
 
 // URLに ?code= が付いていれば初期表示で取得しておく。
-// ?code=gr1974 でも ?code=1974 でも同じように受ける
+// ?code=gr1974 でも ?code=1974 でも同じように受ける。
+//
+// 付いていないときはスプレッドシートだけ先に取る。
+// 記事下リンクの週は外部配信日で決まるので、連載を選ぶ前から出せる
 (function initFromQuery() {
   const params = new URLSearchParams(location.search);
   const digits = toCategoryDigits(params.get('code'));
 
   if (digits) {
-    el.codeInput.value = digits;
-    fetchSeriesData();
+    el.searchInput.value = digits;
+    fetchSeriesData(`gr${digits}`);
+    return;
   }
+
+  fetchSheetOnly();
 })();
 
 // ------------------------------------------------------------
 // カテゴリコード
 // ------------------------------------------------------------
 
+// 入力が「カテゴリコードそのもの」かどうか。
+// 1974 / gr1974 / GR1974 / 全角の１９７４ を受ける。
+// それ以外（書籍名）は部分一致の検索に回す
+function isCodeQuery(value) {
+  return /^\s*(?:[gG][rR])?[0-9０-９]+\s*$/.test(String(value || ''));
+}
+
 // 画面に出しているのは数字だけ。APIへ渡すときに gr を付け直す
 function getCategoryCode() {
-  const digits = toCategoryDigits(el.codeInput.value);
+  const digits = toCategoryDigits(el.searchInput.value);
 
   return digits ? `gr${digits}` : '';
 }
@@ -321,22 +339,120 @@ function toCategoryDigits(value) {
     .replace(/[^0-9]/g, '');
 }
 
-// 直しようがない文字（英字・記号）が混ざっていたか。
-// 全角数字と gr は自動で直すので、ここでは咎めない
-function hasUnusableCodeChars(value) {
-  return /[^0-9０-９\s]/.test(String(value || '').replace(/^\s*[gG][rR]/, ''));
+// 検索ボタン・Enterの入口。
+// 数字だけならカテゴリコードで1件引き、それ以外は書籍名で候補を出す
+function runSearch() {
+  const text = String(el.searchInput.value || '').trim();
+
+  if (!text) {
+    setStatus('書籍名かカテゴリコードを入力してください', true);
+    el.searchInput.focus();
+    return;
+  }
+
+  if (isCodeQuery(text)) {
+    fetchSeriesData(getCategoryCode());
+    return;
+  }
+
+  fetchCandidates(text);
 }
 
 // ------------------------------------------------------------
 // API取得
 // ------------------------------------------------------------
 
-async function fetchSeriesData() {
-  const code = getCategoryCode();
+// スプレッドシートだけ先に取る。
+// 記事下リンクの週は外部配信日で決まるので、連載を選ぶ前から出せる
+async function fetchSheetOnly() {
+  try {
+    const response = await fetch(API_ENDPOINT, { cache: 'no-store' });
+    const json = await response.json().catch(() => null);
 
+    if (!response.ok || !json) {
+      applySheetPayload({
+        status: 'error',
+        message: `記事下データを取得できませんでした（HTTP ${response.status}）`,
+      });
+    } else {
+      applySheetPayload(json.sheet);
+    }
+  } catch (e) {
+    applySheetPayload({
+      status: 'error',
+      message: `通信エラー：${String(e.message || e)}`,
+    });
+  }
+
+  // 応答が返るのは読み込みの少しあと。②を開いていなければ作り直さない。
+  // 開いていても作り直すのは表だけなので、入力中の値は state に入っている
+  markBottomDirty();
+}
+
+// スプレッドシートは kintone と独立して扱う。
+// 記事下だけ取れなくても、①前回記事タブは最後まで使えるようにする
+function applySheetPayload(sheet) {
+  const payload = sheet || {};
+
+  state.sheetStatus = payload.status === 'ok' ? 'ok' : 'error';
+  state.sheetRows =
+    payload.status === 'ok' && Array.isArray(payload.rows) ? payload.rows : null;
+  state.sheetMessage = String(payload.message || '');
+  state.sheetFetched = true;
+
+  // 行が入れ替わったので、年の推定はやり直させる
+  state.parsedSheetRows = null;
+  state.parsedSheetSource = null;
+}
+
+// 書籍名の部分一致で連載候補を出す
+async function fetchCandidates(text) {
+  el.fetchBtn.disabled = true;
+  setStatus('検索中…');
+
+  try {
+    const response = await fetch(
+      `${API_ENDPOINT}?q=${encodeURIComponent(text)}`,
+      { cache: 'no-store' }
+    );
+
+    const json = await response.json().catch(() => null);
+
+    if (!response.ok || !json) {
+      renderCandidates([]);
+      setStatus(`検索に失敗しました（HTTP ${response.status}）`, true);
+      return;
+    }
+
+    applySheetPayload(json.sheet);
+    renderBottomTable();
+
+    const candidates = json.candidates || {};
+    const items = Array.isArray(candidates.items) ? candidates.items : [];
+
+    renderCandidates(items);
+
+    if (!items.length) {
+      setStatus(
+        candidates.message || `「${text}」に一致する連載がありません`,
+        true
+      );
+      return;
+    }
+
+    setStatus(`${items.length}件見つかりました。連載を選んでください`);
+  } catch (e) {
+    renderCandidates([]);
+    setStatus(`通信エラー：${String(e.message || e)}`, true);
+  } finally {
+    el.fetchBtn.disabled = false;
+  }
+}
+
+async function fetchSeriesData(code) {
   if (!code) {
-    setStatus('カテゴリコードの数字を入力してください', true);
-    el.codeInput.focus();
+    setStatus('書籍名かカテゴリコードを入力してください', true);
+    el.searchInput.focus();
     return;
   }
 
@@ -361,19 +477,7 @@ async function fetchSeriesData() {
       return;
     }
 
-    // スプレッドシートは kintone と独立して扱う。
-    // 記事下だけ取れなくても、①前回記事タブは最後まで使えるようにする
-    const sheet = json.sheet || {};
-
-    state.sheetStatus = sheet.status === 'ok' ? 'ok' : 'error';
-    state.sheetRows =
-      sheet.status === 'ok' && Array.isArray(sheet.rows) ? sheet.rows : null;
-    state.sheetMessage = String(sheet.message || '');
-    state.sheetFetched = true;
-
-    // 行が入れ替わったので、年の推定はやり直させる
-    state.parsedSheetRows = null;
-    state.parsedSheetSource = null;
+    applySheetPayload(json.sheet);
 
     const series = json.series || {};
 
@@ -395,6 +499,9 @@ async function fetchSeriesData() {
     }
 
     state.series = series.data;
+
+    // 連載が決まったので候補一覧は閉じる
+    renderCandidates([]);
 
     renderWarnings(json.warnings);
     renderCommon();
@@ -445,6 +552,60 @@ function clearAllInputs() {
 
   setBulkStatus('');
   buildRows();
+}
+
+// ------------------------------------------------------------
+// 連載候補
+//
+// 書籍名で検索したときだけ出す。押すとその連載を読み込む
+// ------------------------------------------------------------
+
+function renderCandidates(items) {
+  el.candidatesList.textContent = '';
+
+  if (!items.length) {
+    el.candidates.hidden = true;
+    return;
+  }
+
+  items.forEach((item) => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.className = 'candidate';
+    button.dataset.code = item.categoryCode || '';
+
+    const title = document.createElement('span');
+
+    title.className = 'candidate-title ellip';
+    title.textContent = item.bookTitle || '（書籍タイトルなし）';
+
+    // カテゴリコードと制作Noは同じ書籍名が複数あるときの決め手になる
+    const meta = document.createElement('span');
+
+    meta.className = 'candidate-meta mono';
+    meta.textContent = [
+      item.categoryCode || 'コード未登録',
+      item.productionNo ? `制作No ${item.productionNo}` : '',
+    ]
+      .filter(Boolean)
+      .join('　');
+
+    button.appendChild(title);
+    button.appendChild(meta);
+
+    // カテゴリコードが無いレコードは選んでも記事下を作れない
+    if (!item.categoryCode) {
+      button.disabled = true;
+      button.title = 'カテゴリIDが未登録です';
+    }
+
+    li.appendChild(button);
+    el.candidatesList.appendChild(li);
+  });
+
+  el.candidates.hidden = false;
 }
 
 // ------------------------------------------------------------
