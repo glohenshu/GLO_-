@@ -539,7 +539,12 @@ function syncAuthorDependents() {
 // ============================================================
 
 const BOOK_FIELD_DEFS = [
-  { key: 'author', label: '著者', calc: () => joinedAuthorNames().replace(/ /g, '') },
+  // 書名は出版実績ページのものを使う。kintoneの書籍タイトルは
+  // 「」『』が付いていることがあるため、取れなかったときの控えに回す
+  { key: 'title', label: 'タイトル', calc: () => state.pub?.title || state.record?.bookTitle || '' },
+  // 副題は無い作品のほうが多い。取得漏れと区別できるよう、
+  // ページに副題が無かった場合は専用の文言を出す
+  { key: 'subtitle', label: 'サブタイトル', emptyNote: 'サブタイトルなし ※要確認', calc: () => state.pub?.subtitle || '' },
   { key: 'dispAuthor', label: '表示用著者名', calc: () => joinedAuthorNames() },
   { key: 'intro', label: '紹介文', textarea: true, calc: () => textToBrCompact(state.pub?.intro || '') },
   { key: 'isbn', label: 'ISBN', calc: () => state.pub?.isbn || '' },
@@ -589,12 +594,13 @@ function renderBookFields() {
     $(inputId).value = def.calc() || '';
 
     // 空欄の理由を分ける。
-    // 出版実績ページが取れているのに空なら、そのページに記載が無い
-    // （電子書籍のみの作品はISBN・判型・ページ数が常に空になる）。
     // ページ自体が取れていないなら、取得の失敗。
+    // ページは取れているのに空なら、そのページに記載が無い
+    // （電子書籍のみの作品はISBN・判型・ページ数が常に空になる）。
+    // 項目ごとに言い方を変えたいものは emptyNote を持たせる。
     if (!$(inputId).value) {
       $(inputId).placeholder = state.pub
-        ? 'ページに記載がありません'
+        ? (def.emptyNote || 'ページに記載がありません')
         : '取得できませんでした';
     }
   });

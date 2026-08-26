@@ -394,6 +394,51 @@ function sectionAfter(text, marker, keepSubHeadings = false) {
 // 出版実績ページ解析
 // ============================================================
 
+// 書名と副題を、ページの構造から取り出す。
+//
+// 出版実績ページは次の形になっている。
+//
+//   <div class="title01 …">
+//     <h1 itemprop="name" class="main">書名</h1>
+//     <p class="sub">副題</p>          ← 無い作品も多い
+//   </div>
+//   <div class="product_detail_info …">
+//     <p>タイトル直下キャッチ</p>       ← 別のブロック
+//
+// キャッチは title01 の外にあるので、ここで拾うことはない。
+//
+// なお extractMainH1() が拾う <h1> はページ見出しの
+// 「出版実績」であって書名ではない。書名はこちらを使うこと。
+function extractTitleBlock(html) {
+  const box = html.match(
+    /<div[^>]*class="[^"]*\btitle01\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+  );
+
+  if (!box) {
+    return { title: '', subtitle: '' };
+  }
+
+  const inner = box[1];
+
+  const t = inner.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
+  const s = inner.match(
+    /<p[^>]*class="[^"]*\bsub\b[^"]*"[^>]*>([\s\S]*?)<\/p>/i
+  );
+
+  // 末尾に全角スペースが付いている書名があるため、
+  // 通常の trim() だけでなく全角スペースも落とす
+  const clean = (v) =>
+    htmlToText(v)
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s　]+|[\s　]+$/g, '');
+
+  return {
+    title: t ? clean(t[1]) : '',
+    subtitle: s ? clean(s[1]) : '',
+  };
+}
+
+
 function extractMainH1(html) {
   const m = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
 
@@ -513,140 +558,50 @@ function parsePublicationPage(html) {
     '';
 
 
+  const titleBlock = extractTitleBlock(html);
+
   // ------------------------------------------------------------
   // タイトル直下キャッチ
   //
-  // 出版実績ページは、kintoneの書籍タイトルではなく、
-  // kintoneに登録されている「出版実績URL」から取得した
-  // そのページ自身の <h1> を起点に解析する。
+  // ページ上は title01（書名・副題）の次に置かれた
+  // product_detail_info がキャッチのブロックになっている。
   //
-  // h1終了直後 ～ 「ジャンル」直前のテキストを候補とし、
-  // 「書籍を購入...」等を除外する。
+  //   <div class="title01 …">
+  //     <h1 class="main">書名</h1>
+  //     <p class="sub">副題</p>
+  //   </div>
+  //   <div class="product_detail_info …">
+  //     <p>キャッチ</p>          ← ここだけを読む
+  //   </div>
   //
-  // 文末記号で終わらない先頭行が複数ある場合は、
-  // サブタイトル等とみなして除外する。
+  // 以前は「h1 の後ろから『ジャンル』までの行を上から捨てていき、
+  // 句読点で終わる行が来たら止める」方式だった。そのため書名が
+  // 「」『』？！。 で終わる作品では書名の行で止まってしまい、
+  // 書名と副題がキャッチに混入していた（gr1600〜1981 で17件）。
+  // ブロックを指定して読めば、その取り違えは起きない。
   // ------------------------------------------------------------
 
   let catchCopy = '';
 
-  const h1 = extractMainH1(html);
+  const infoBlock = html.match(
+    /<div[^>]*class="[^"]*\bproduct_detail_info\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+  );
 
-  // <h1> が空のページは出版実績ページとして扱わない。
-  // 削除済み商品のURLは HTTP 200 のまま <h1> が空の
-  // 404ページが返る（ソフト404）ことがあり、ここで打ち切らないと
-  // サイト共通の宣伝文をキャッチコピーとして取得してしまう。
-  if (h1.title && h1.afterHtml) {
-    const afterH1Text = htmlToText(h1.afterHtml);
-
-    const genreIdx =
-      afterH1Text.search(
-        /(^|\n)ジャンル\s*(\n|$)/
-      );
-
-    if (genreIdx !== -1) {
-      let lines =
-        afterH1Text
-          .slice(0, genreIdx)
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(
-            (l) =>
-              l &&
-              !/^書籍を購/.test(l)
-          );
-
-      while (
-        lines.length > 1 &&
-        !/[。．！？!?…」』]$/.test(
-          lines[0]
-        )
-      ) {
-        lines.shift();
-      }
-
-      catchCopy =
-        lines
-          .join('\n')
-          .slice(0, 400)
-          .trim();
-    }
-
-
-    // ----------------------------------------------------------
-    // フォールバック：
-    // 「ジャンル」が見つからない場合も、h1直後から
-    // 本文外マーカーまでの範囲でキャッチ候補を探す。
-    // ----------------------------------------------------------
-
-    if (!catchCopy) {
-      let chunk =
-        cutAtStops(afterH1Text);
-
-      const stop =
-        chunk.search(
-          /■|ジャンル|著者名?[：:]/
-        );
-
-      if (stop !== -1) {
-        chunk =
-          chunk.slice(
-            0,
-            stop
-          );
-      }
-
-      let lines =
-        chunk
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(
-            (l) =>
-              l &&
-              !/^書籍を購/.test(l)
-          );
-
-      while (
-        lines.length > 1 &&
-        !/[。．！？!?…」』]$/.test(
-          lines[0]
-        )
-      ) {
-        lines.shift();
-      }
-
-      catchCopy =
-        lines
-          .join('\n')
-          .slice(0, 400)
-          .trim();
-    }
+  if (infoBlock) {
+    catchCopy = htmlToText(infoBlock[1])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 400)
+      .trim();
   }
 
-
-  // ------------------------------------------------------------
-  // 最終フォールバック：
-  // og:description
-  //
-  // ただし <h1> の無いページ（削除済み商品のソフト404）では
-  // og:description がサイト共通の宣伝文になっているため、
-  // 出版実績ページと確認できた場合だけ使う。
-  // ------------------------------------------------------------
-
-  if (!catchCopy && h1.title) {
-    const og =
-      html.match(
-        /property=["']og:description["'][^>]*content=["']([^"']+)["']/
-      ) ||
-      html.match(
-        /content=["']([^"']+)["'][^>]*property=["']og:description["']/
-      );
-
-    if (og) {
-      catchCopy =
-        og[1].trim();
-    }
+  // product_detail_info が空タグのページがある。
+  // その場合は副題がキャッチを兼ねているので副題を使う。
+  if (!catchCopy) {
+    catchCopy = titleBlock.subtitle || '';
   }
-
 
   return {
     authorBlock,
@@ -655,6 +610,8 @@ function parsePublicationPage(html) {
     format,
     pubDate,
     catchCopy,
+    title: titleBlock.title,
+    subtitle: titleBlock.subtitle,
     rawText:
       text.slice(0, 4000),
   };
