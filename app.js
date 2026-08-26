@@ -870,20 +870,37 @@ function renderTemplateTab() {
   $('tpl-delivery').textContent = fmtDelivery(state.record?.firstDelivery) || '—';
 
   const hit = findSheetRow();
+
+  // シートB列には年が無いため、判定した年を併記して
+  // 別の年の行を拾っていないか目視で確認できるようにする
+  const periodLabel = hit
+    ? `${hit.period.label.replace(/\s*\n\s*/g, ' ')}（${fmtYmd(hit.period.start)}〜${fmtYmd(hit.period.end)}）`
+    : '';
+
   if (hit && hit.html) {
-    // シートB列には年が無いため、判定した年を併記して
-    // 別の年の行を拾っていないか目視で確認できるようにする
-    $('tpl-period').textContent =
-      `${hit.period.label.replace(/\s*\n\s*/g, ' ')}（${fmtYmd(hit.period.start)}〜${fmtYmd(hit.period.end)}）`;
+    $('tpl-period').textContent = periodLabel;
     $('tpl-c-status').textContent = '成功';
     $('tpl-manual-wrap').hidden = true;
     $('tpl-output').value = buildTemplateHtml(hit.html);
+    return;
+  }
+
+  // 取れない理由を3つに分ける。
+  //
+  // 期間の行は見つかっているのにC列が空、という状態が実際にある
+  // （シートに週の行だけ先に作られ、記事下HTMLが後から入るため）。
+  // ここで「該当期間が見つかりません」と出すと、ツールが壊れたように
+  // 見えてしまう。実際にはシートの記入待ちなので、そう分かるようにする。
+  if (hit) {
+    $('tpl-period').textContent = periodLabel;
+    $('tpl-c-status').textContent = 'シートのC列が未記入です';
   } else {
     $('tpl-period').textContent = '該当期間が見つかりません';
     $('tpl-c-status').textContent = state.sheetRows ? '該当行なし' : '取得できませんでした';
-    $('tpl-manual-wrap').hidden = false;
-    $('tpl-output').value = buildTemplateHtml($('tpl-manual').value);
   }
+
+  $('tpl-manual-wrap').hidden = false;
+  $('tpl-output').value = buildTemplateHtml($('tpl-manual').value);
 }
 
 $('tpl-manual').addEventListener('input', () => {
