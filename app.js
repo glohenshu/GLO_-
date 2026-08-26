@@ -806,6 +806,13 @@ function findSheetRow() {
   const target = new Date(t.y, t.m - 1, t.d);
   const parsed = assignRowYears(state.sheetRows, new Date());
 
+  // 配信日が入る行を、下から順にすべて拾う。
+  //
+  // シートには同じ期間の行が複数あることがある（実際に重複行が存在する）。
+  // 下から1件目で打ち切ると、C列が空の行を先に拾ってしまい、
+  // 中身のある行があるのに「未記入」と出てしまう。
+  const matches = [];
+
   for (let i = parsed.length - 1; i >= 0; i--) {
     const p = parsed[i];
     if (!p.parts || p.year === null) continue;
@@ -818,18 +825,24 @@ function findSheetRow() {
     const end = new Date(ey, em - 1, ed);
 
     if (target >= start && target <= end) {
-      return {
+      matches.push({
         period: {
           start,
           end,
           label: String(p.row?.[0] || '').trim(),
         },
         html: p.row?.[1] || '',
-      };
+      });
     }
   }
 
-  return null;
+  if (!matches.length) return null;
+
+  // C列に中身がある行を優先する。
+  // どれも空なら先頭を返し、期間名を出したうえで「C列が未記入」と伝える。
+  return (
+    matches.find((m) => String(m.html).trim()) || matches[0]
+  );
 }
 
 function buildTemplateHtml(cHtml) {
@@ -870,20 +883,37 @@ function renderTemplateTab() {
   $('tpl-delivery').textContent = fmtDelivery(state.record?.firstDelivery) || '—';
 
   const hit = findSheetRow();
+
+  // シートB列には年が無いため、判定した年を併記して
+  // 別の年の行を拾っていないか目視で確認できるようにする
+  const periodLabel = hit
+    ? `${hit.period.label.replace(/\s*\n\s*/g, ' ')}（${fmtYmd(hit.period.start)}〜${fmtYmd(hit.period.end)}）`
+    : '';
+
   if (hit && hit.html) {
-    // シートB列には年が無いため、判定した年を併記して
-    // 別の年の行を拾っていないか目視で確認できるようにする
-    $('tpl-period').textContent =
-      `${hit.period.label.replace(/\s*\n\s*/g, ' ')}（${fmtYmd(hit.period.start)}〜${fmtYmd(hit.period.end)}）`;
+    $('tpl-period').textContent = periodLabel;
     $('tpl-c-status').textContent = '成功';
     $('tpl-manual-wrap').hidden = true;
     $('tpl-output').value = buildTemplateHtml(hit.html);
+    return;
+  }
+
+  // 取れない理由を3つに分ける。
+  //
+  // 期間の行は見つかっているのにC列が空、という状態が実際にある
+  // （シートに週の行だけ先に作られ、記事下HTMLが後から入るため）。
+  // ここで「該当期間が見つかりません」と出すと、ツールが壊れたように
+  // 見えてしまう。実際にはシートの記入待ちなので、そう分かるようにする。
+  if (hit) {
+    $('tpl-period').textContent = periodLabel;
+    $('tpl-c-status').textContent = 'シートのC列が未記入です';
   } else {
     $('tpl-period').textContent = '該当期間が見つかりません';
     $('tpl-c-status').textContent = state.sheetRows ? '該当行なし' : '取得できませんでした';
-    $('tpl-manual-wrap').hidden = false;
-    $('tpl-output').value = buildTemplateHtml($('tpl-manual').value);
   }
+
+  $('tpl-manual-wrap').hidden = false;
+  $('tpl-output').value = buildTemplateHtml($('tpl-manual').value);
 }
 
 $('tpl-manual').addEventListener('input', () => {
