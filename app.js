@@ -22,14 +22,44 @@ function textToBr(text) {
   return lines.map((l, i) => (i < lines.length - 1 ? l + '<br>' : l)).join('\n');
 }
 
-// 空行を除去して、各行を<br>でつなぐ
+// 改行→<br> 変換（紹介文用）
+//
+// 出版実績ページから取った文字列は、1行ごとに「\n\r\n」で区切られている
+// （ページ側の <br> と </p> が両方とも改行になるため）。正規化すると
+// 行と行のあいだに空行が1つ入る。ページ上で段落が分かれているところは
+// そこにもう1組入るので、空行が2つ以上になる。
+//
+//   空行1つ    … ただの改行        → <br> ひとつ
+//   空行2つ以上 … 段落の切れ目      → 空行を1つ残して段落を保つ
+//
+// 以前は空行をすべて捨てていたため、ページ上の段落分けまで消えていた。
 function textToBrCompact(text) {
   const lines = String(text || '')
     .replace(/\r\n?/g, '\n')
     .split('\n')
-    .filter((line) => line.trim() !== '');
+    .map((line) => line.trim());
 
-  return lines.join('<br>\n');
+  // 前後の空行は落とす
+  while (lines.length && lines[0] === '') lines.shift();
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+
+  const out = [];
+  let blanks = 0;
+
+  for (const line of lines) {
+    if (line === '') {
+      blanks += 1;
+      continue;
+    }
+    // 段落の切れ目だけ空行を1つ残す
+    if (out.length && blanks >= 2) out.push('');
+    blanks = 0;
+    out.push(line);
+  }
+
+  return out
+    .map((line, i) => (i < out.length - 1 ? line + '<br>' : line))
+    .join('\n');
 }
 
 // kintoneのDATETIME値 → 日本時間の {y,m,d,hh,mm}
