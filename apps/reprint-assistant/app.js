@@ -1454,22 +1454,16 @@ function needsAttention(link, reason) {
   return findRiskyTitleParts(link.source && link.source.articleTitle).length > 0;
 }
 
-// スプレッドシートC列は先頭に余白の段落 <p>　</p> が入っている。
-// そのまま後ろにつなぐと「続きを読む」の下に余白が来てしまうので、
-// 余白は先頭へ回して、続きを読むの上に空きを作る。
+// 続きを読む（最終回は最終回の文言）を先頭に置き、そのままC列をつなぐ。
 //
+// C列は先頭に余白の段落 <p>　</p> が入っているので、この順で
+// 「続きを読む → 余白 → 連載記事一覧」になる。並べ替えてはいけない。
+//
+//   <p align="center">試し読み連載は今回で最終回です。…</p>
 //   <p>　</p>
-//   <p>▶この話の続きを読む…</p>
 //   <p>…連載記事一覧…</p>
-const LEADING_SPACER_RE = /^\s*<p(?:\s[^>]*)?>(?:\s|　|&nbsp;)*<\/p>\s*/i;
-
 function joinBottomHtml(headHtml, bottomHtml) {
-  const body = String(bottomHtml || '');
-  const match = body.match(LEADING_SPACER_RE);
-
-  if (!match) return `${headHtml}\n${body}`;
-
-  return `${match[0].trim()}\n${headHtml}\n${body.slice(match[0].length)}`;
+  return `${headHtml}\n${String(bottomHtml || '')}`;
 }
 
 // 今回の第N回 → 参照元の第(N+1)回。公開日時ではなく回数で突き合わせる。
