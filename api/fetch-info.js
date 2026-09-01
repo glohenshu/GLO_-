@@ -273,9 +273,26 @@ function htmlToText(html) {
     .replace(/<head[\s\S]*?<\/head>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
+    // 改行コードを先に揃える。CRが残ったままだと空行の数を数えられない
+    .replace(/\r\n?/g, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
+    // </p> は段落の切れ目。ただの改行（<br>）と区別できるよう空行を作る。
+    //
+    // ページのHTMLは
+    //   段落の中の改行 … `<br />` + ページ側の改行
+    //   段落の切れ目   … `</p>` + ページ側の改行 + `<p>`
+    // で、どちらも「\n + ページ側の改行」になっていた。
+    // そのため段落かどうかを後段で見分けられず、著者紹介の段落が
+    // 消えていた（gr1953 など）。
+    //
+    // `</p><p>` が改行なしで続くページもあるため改行3つにしておく。
+    // 末尾の \n{4,} → \n\n\n で空行2つに揃うので、
+    //   空行1つ    … ただの改行
+    //   空行2つ    … 段落の切れ目
+    // という形になる。app.js の compactLines() がこれを見ている。
+    .replace(/<\/p>/gi, '\n\n\n')
     .replace(
-      /<\/(p|div|h[1-6]|li|tr|section|article|dd|dt)>/gi,
+      /<\/(div|h[1-6]|li|tr|section|article|dd|dt)>/gi,
       '\n'
     )
     .replace(/<[^>]+>/g, '');
@@ -296,7 +313,8 @@ function htmlToText(html) {
         .replace(/^[\t ]+/g, '')
     )
     .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
+    // 空行は最大2つまで。段落の切れ目（空行2つ）を潰さない
+    .replace(/\n{4,}/g, '\n\n\n')
     .trim();
 }
 
