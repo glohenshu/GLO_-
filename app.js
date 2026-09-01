@@ -22,18 +22,19 @@ function textToBr(text) {
   return lines.map((l, i) => (i < lines.length - 1 ? l + '<br>' : l)).join('\n');
 }
 
-// 改行→<br> 変換（紹介文用）
+// 出版実績ページの文字列を行の配列に整える
 //
 // 出版実績ページから取った文字列は、1行ごとに「\n\r\n」で区切られている
 // （ページ側の <br> と </p> が両方とも改行になるため）。正規化すると
 // 行と行のあいだに空行が1つ入る。ページ上で段落が分かれているところは
 // そこにもう1組入るので、空行が2つ以上になる。
 //
-//   空行1つ    … ただの改行        → <br> ひとつ
+//   空行1つ    … ただの改行        → 空行を落とす
 //   空行2つ以上 … 段落の切れ目      → 空行を1つ残して段落を保つ
 //
 // 以前は空行をすべて捨てていたため、ページ上の段落分けまで消えていた。
-function textToBrCompact(text) {
+// 紹介文（②書籍登録）と著者紹介（①著者登録）の両方がこれを通る。
+function compactLines(text) {
   const lines = String(text || '')
     .replace(/\r\n?/g, '\n')
     .split('\n')
@@ -57,6 +58,12 @@ function textToBrCompact(text) {
     out.push(line);
   }
 
+  return out;
+}
+
+// 改行→<br> 変換（紹介文用）。段落の切れ目に残した空行はそのまま <br> になる
+function textToBrCompact(text) {
+  const out = compactLines(text);
   return out
     .map((line, i) => (i < out.length - 1 ? line + '<br>' : line))
     .join('\n');
@@ -296,11 +303,10 @@ function buildAuthorsFromPub() {
   state.authors = [];
 
   const block = state.pub?.authorBlock || '';
-  const lines = block
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l !== '');
+
+  // 空行をすべて捨てると、ページ上の段落分けまで消えてしまう。
+  // 紹介文と同じく compactLines() に通し、段落の切れ目だけ空行1つで残す。
+  const lines = compactLines(block);
 
   const createAuthor = (name = '', kana = '') => ({
     name,
@@ -356,6 +362,8 @@ function buildAuthorsFromPub() {
     }
 
     if (current) {
+      // 著者名行の直後の空行は落とす（著者紹介の先頭に空行を作らない）
+      if (line === '' && current.intro.length === 0) continue;
       current.intro.push(line);
     }
   }
