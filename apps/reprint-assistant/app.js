@@ -1804,7 +1804,7 @@ function buildNextArticleTemplateHtml() {
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
-// 開始日から1日ずつ進めて、指定件数ぶんの日付を作る。
+// 開始日から1日ずつ進めて、指定件数ぶんの配信日を作る。
 // 月またぎ・年またぎは Date の日付繰り上げに任せる
 function buildNextUpdateDates(start, count) {
   if (!start || !count) return [];
@@ -1818,6 +1818,16 @@ function buildNextUpdateDates(start, count) {
   }
 
   return dates;
+}
+
+// 配信日の記事に書く「次回更新」は、その翌日。
+// 毎日更新なので次回＝明日になる
+function nextUpdateDateOf(deliveryDate) {
+  return new Date(
+    deliveryDate.getFullYear(),
+    deliveryDate.getMonth(),
+    deliveryDate.getDate() + 1
+  );
 }
 
 function renderNextTable() {
@@ -1845,7 +1855,8 @@ function renderNextTable() {
   }
 
   dates.forEach((date, index) => {
-    const html = buildNextUpdateHtml(date, time);
+    const nextDate = nextUpdateDateOf(date);
+    const html = buildNextUpdateHtml(nextDate, time);
 
     const tr = document.createElement('tr');
 
@@ -1853,7 +1864,7 @@ function renderNextTable() {
     tr.appendChild(createCell(fmtYmdShort(date), 'col-date'));
 
     const cell = document.createElement('td');
-    cell.appendChild(createLine(fmtNextUpdate(date, time), 'range'));
+    cell.appendChild(createLine(fmtNextUpdate(nextDate, time), 'range'));
     tr.appendChild(cell);
 
     const actionCell = document.createElement('td');
@@ -1919,7 +1930,7 @@ function buildNextUpdateHtmlAll() {
   if (!start || !time) return '';
 
   const lines = buildNextUpdateDates(start, state.nextCount).map((date) =>
-    buildNextUpdateHtml(date, time)
+    buildNextUpdateHtml(nextUpdateDateOf(date), time)
   );
 
   // 画面の並びと同じく、最後に最終回の文言を足す

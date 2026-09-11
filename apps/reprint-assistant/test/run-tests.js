@@ -1427,14 +1427,22 @@ check('指定した件数ぶん作る', () => {
   return got.join(',') === '2,6,31' || `→ ${got.join(',')}`;
 });
 
-check('開始日から1日ずつ進める', () => {
+check('配信日は開始日から1日ずつ進める', () => {
+  const app = setupNext({ count: 3 });
+
+  const got = nextRowsOf(app).map((cells) => cells[1]);
+
+  return got.join(' / ') === '2026/8/29 / 2026/8/30 / 2026/8/31' || `→ ${got.join(' / ')}`;
+});
+
+check('次回更新日は配信日の翌日', () => {
   const app = setupNext({ count: 3 });
 
   const got = nextRowsOf(app).map((cells) => cells[2]);
 
   return (
     got.join(' / ') ===
-      '次回更新は8月29日(土)、21時の予定です。 / 次回更新は8月30日(日)、21時の予定です。 / 次回更新は8月31日(月)、21時の予定です。' ||
+      '次回更新は8月30日(日)、21時の予定です。 / 次回更新は8月31日(月)、21時の予定です。 / 次回更新は9月1日(火)、21時の予定です。' ||
     `→ ${got.join(' / ')}`
   );
 });
@@ -1456,7 +1464,7 @@ check('月をまたぐと月表記が切り替わる', () => {
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
   return (
-    got.join(' / ') === '7月30日(木) / 7月31日(金) / 8月1日(土) / 8月2日(日)' ||
+    got.join(' / ') === '7月31日(金) / 8月1日(土) / 8月2日(日) / 8月3日(月)' ||
     `→ ${got.join(' / ')}`
   );
 });
@@ -1467,13 +1475,13 @@ check('年をまたぐと年をまたいで進む', () => {
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
   return (
-    got.join(' / ') === '12月30日(水) / 12月31日(木) / 1月1日(金) / 1月2日(土)' ||
+    got.join(' / ') === '12月31日(木) / 1月1日(金) / 1月2日(土) / 1月3日(日)' ||
     `→ ${got.join(' / ')}`
   );
 });
 
 check('うるう年の2月29日をまたげる', () => {
-  const app = setupNext({ start: '2028-02-28', count: 3 });
+  const app = setupNext({ start: '2028-02-27', count: 3 });
 
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
@@ -1507,9 +1515,9 @@ check('生成HTMLは <p align="center"> の1段落', () => {
 });
 
 check('全件まとめてコピーは1行ずつ改行でつなぐ', () => {
-  const app = setupNext({ start: '2026-07-31', count: 2 });
+  const app = setupNext({ start: '2026-07-30', count: 2 });
 
-  // 画面の並びと同じく、最後に最終回の文言が付く
+  // 配信日7/30・7/31の翌日を出す。画面の並びと同じく、最後に最終回の文言が付く
   return (
     app.buildNextUpdateHtmlAll() ===
       '<p align="center">次回更新は7月31日(金)、21時の予定です。</p>\n' +
