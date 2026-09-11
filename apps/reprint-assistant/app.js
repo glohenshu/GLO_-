@@ -1805,6 +1805,7 @@ function buildNextArticleTemplateHtml() {
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
 // 開始日から1日ずつ進めて、指定件数ぶんの配信日を作る。
+// 件数は最終回を含めた総数で、最後の1件が最終回になる。
 // 月またぎ・年またぎは Date の日付繰り上げに任せる
 function buildNextUpdateDates(start, count) {
   if (!start || !count) return [];
@@ -1854,6 +1855,9 @@ function renderNextTable() {
     return;
   }
 
+  // 最後の1件は次回が無いので、次回更新日ではなく最終回の文言を出す
+  const finalDate = dates.pop();
+
   dates.forEach((date, index) => {
     const nextDate = nextUpdateDateOf(date);
     const html = buildNextUpdateHtml(nextDate, time);
@@ -1885,16 +1889,16 @@ function renderNextTable() {
     el.nextBody.appendChild(tr);
   });
 
-  el.nextBody.appendChild(createFinalMessageRow());
+  el.nextBody.appendChild(createFinalMessageRow(finalDate));
 }
 
-// 指定件数の後ろに置く最終回の行。文言は画面の選択に従う
-function createFinalMessageRow() {
+// 指定件数の最後の1件＝最終回の行。文言は画面の選択に従う
+function createFinalMessageRow(date) {
   const tr = document.createElement('tr');
   tr.classList.add('is-final');
 
   tr.appendChild(createCell('最終回', 'col-ep ep-no'));
-  tr.appendChild(createCell('—', 'col-date'));
+  tr.appendChild(createCell(fmtYmdShort(date), 'col-date'));
 
   const cell = document.createElement('td');
   cell.appendChild(createLine(FINAL_MESSAGES[state.finalMessage], 'final'));
@@ -1929,11 +1933,15 @@ function buildNextUpdateHtmlAll() {
 
   if (!start || !time) return '';
 
-  const lines = buildNextUpdateDates(start, state.nextCount).map((date) =>
-    buildNextUpdateHtml(nextUpdateDateOf(date), time)
-  );
+  const dates = buildNextUpdateDates(start, state.nextCount);
 
-  // 画面の並びと同じく、最後に最終回の文言を足す
+  if (!dates.length) return '';
+
+  // 画面の並びと同じく、最後の1件は最終回の文言にする
+  const lines = dates
+    .slice(0, -1)
+    .map((date) => buildNextUpdateHtml(nextUpdateDateOf(date), time));
+
   lines.push(buildFinalMessageHtml());
 
   return lines.join('\n');

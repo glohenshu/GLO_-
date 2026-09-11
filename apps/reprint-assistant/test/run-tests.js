@@ -1413,22 +1413,48 @@ function finalRowOf(app) {
 check('連載を読み込まなくても作れる', () => {
   const app = setupNext();
 
-  // 次回更新日8件＋最終回1件
+  // 次回更新日7件＋最終回1件
   return (
-    (app.state.series === null && app.el.nextBody.children.length === 9) ||
+    (app.state.series === null && app.el.nextBody.children.length === 8) ||
     `→ ${app.el.nextBody.children.length}件`
   );
 });
 
-check('指定した件数ぶん作る', () => {
-  // それぞれ最終回の1件が足される
-  const got = [1, 5, 30].map((count) => setupNext({ count }).el.nextBody.children.length);
+check('指定した件数ぶん作る（最終回を含む）', () => {
+  const got = [1, 5, 31].map((count) => setupNext({ count }).el.nextBody.children.length);
 
-  return got.join(',') === '2,6,31' || `→ ${got.join(',')}`;
+  return got.join(',') === '1,5,31' || `→ ${got.join(',')}`;
+});
+
+check('31件なら31件目が最終回になる', () => {
+  const app = setupNext({ start: '2026-09-18', count: 31 });
+
+  const rows = nextRowsOf(app);
+
+  // 30件目（10/17配信）が最終回の10/18を案内し、10/18が最終回
+  return (
+    (rows.length === 30 &&
+      rows[29].join(' | ') ===
+        '30件目 | 2026/10/17 | 次回更新は10月18日(日)、21時の予定です。 | HTMLコピー' &&
+      finalRowOf(app)[0] === '最終回' &&
+      finalRowOf(app)[1] === '2026/10/18') ||
+    `→ ${rows.length}件 / ${rows[29] && rows[29].join(' | ')} / ${finalRowOf(app).join(' | ')}`
+  );
+});
+
+check('1件なら最終回の行だけ', () => {
+  const app = setupNext({ count: 1 });
+
+  return (
+    (finalRowOf(app)[0] === '最終回' &&
+      app.buildNextUpdateHtmlAll() ===
+        '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>') ||
+    `→ ${finalRowOf(app).join(' | ')}`
+  );
 });
 
 check('配信日は開始日から1日ずつ進める', () => {
-  const app = setupNext({ count: 3 });
+  const app = setupNext({ count: 4 });
 
   const got = nextRowsOf(app).map((cells) => cells[1]);
 
@@ -1436,7 +1462,7 @@ check('配信日は開始日から1日ずつ進める', () => {
 });
 
 check('次回更新日は配信日の翌日', () => {
-  const app = setupNext({ count: 3 });
+  const app = setupNext({ count: 4 });
 
   const got = nextRowsOf(app).map((cells) => cells[2]);
 
@@ -1459,7 +1485,7 @@ check('曜日を日付から自動で計算する', () => {
 });
 
 check('月をまたぐと月表記が切り替わる', () => {
-  const app = setupNext({ start: '2026-07-30', count: 4 });
+  const app = setupNext({ start: '2026-07-30', count: 5 });
 
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
@@ -1470,7 +1496,7 @@ check('月をまたぐと月表記が切り替わる', () => {
 });
 
 check('年をまたぐと年をまたいで進む', () => {
-  const app = setupNext({ start: '2026-12-30', count: 4 });
+  const app = setupNext({ start: '2026-12-30', count: 5 });
 
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
@@ -1481,7 +1507,7 @@ check('年をまたぐと年をまたいで進む', () => {
 });
 
 check('うるう年の2月29日をまたげる', () => {
-  const app = setupNext({ start: '2028-02-27', count: 3 });
+  const app = setupNext({ start: '2028-02-27', count: 4 });
 
   const got = nextRowsOf(app).map((cells) => cells[2].match(/次回更新は([^、]+)、/)[1]);
 
@@ -1515,9 +1541,9 @@ check('生成HTMLは <p align="center"> の1段落', () => {
 });
 
 check('全件まとめてコピーは1行ずつ改行でつなぐ', () => {
-  const app = setupNext({ start: '2026-07-30', count: 2 });
+  const app = setupNext({ start: '2026-07-30', count: 3 });
 
-  // 配信日7/30・7/31の翌日を出す。画面の並びと同じく、最後に最終回の文言が付く
+  // 配信日7/30・7/31の翌日を出す。画面の並びと同じく、3件目（8/1）は最終回の文言
   return (
     app.buildNextUpdateHtmlAll() ===
       '<p align="center">次回更新は7月31日(金)、21時の予定です。</p>\n' +
@@ -1588,7 +1614,7 @@ check('件数は1〜200に丸める', () => {
     (low === app.MIN_NEXT_COUNT &&
       high === app.MAX_NEXT_COUNT &&
       app.state.nextCount === 12 &&
-      app.el.nextBody.children.length === 13) ||
+      app.el.nextBody.children.length === 12) ||
     `→ ${low} / ${high} / ${app.state.nextCount}`
   );
 });
@@ -1602,7 +1628,7 @@ check('初期値は今日・21時・8件', () => {
     (app.state.nextStart === '2026-08-19' &&
       app.state.nextTime === '21:00' &&
       app.state.nextCount === 8 &&
-      app.el.nextBody.children.length === 9) ||
+      app.el.nextBody.children.length === 8) ||
     `→ ${app.state.nextStart} / ${app.state.nextTime} / ${app.state.nextCount}`
   );
 });
@@ -1618,17 +1644,18 @@ check('連載を選び直しても次回更新日タブは作り直さない', (
   app.setEpisodeCount(5);
 
   return (
-    app.el.nextBody.children.length === 4 ||
+    app.el.nextBody.children.length === 3 ||
     `→ ${app.el.nextBody.children.length}件`
   );
 });
 
-check('最終回の行を件数の後ろに1つ足す', () => {
+check('件数の最後の1件を最終回にし、その配信日を出す', () => {
   const app = setupNext({ count: 3 });
 
+  // 8/29開始の3件目＝8/31配信が最終回
   return (
     finalRowOf(app).join(' | ') ===
-      '最終回 | — | 試し読み連載は今回で最終回です。ご愛読ありがとうございました。 | HTMLコピー' ||
+      '最終回 | 2026/8/31 | 試し読み連載は今回で最終回です。ご愛読ありがとうございました。 | HTMLコピー' ||
     `→ ${finalRowOf(app).join(' | ')}`
   );
 });
