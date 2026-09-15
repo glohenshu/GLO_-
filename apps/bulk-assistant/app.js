@@ -548,8 +548,8 @@ function setStatus(message, isError = false) {
   el.fetchStatus.classList.toggle('error', Boolean(isError));
 }
 
-// 連載情報だけを捨てる。①タブの入力は消さない。
-// カテゴリコードを取得できなくても①は使えるようにしておく
+// 連載情報だけを捨てる。①②タブの入力は消さない。
+// 連載を取得できなくても①②は使えるようにしておく（②の一覧リンクは未置換のまま）
 function resetSeries() {
   state.series = null;
 
@@ -1893,7 +1893,9 @@ function updateBottomRow(index) {
       : createCopyButton(
           '記事下まとめてコピー',
           () => joinBottomHtml(link.html, bottomHtml, row.isFinal),
-          '記事下HTMLをコピーしました',
+          state.series
+            ? '記事下HTMLをコピーしました'
+            : '記事下HTMLをコピーしました（一覧リンクは未置換）',
           'strong'
         )
   );
@@ -2045,10 +2047,9 @@ function fillSheetCell(cell, row, hit, bottomHtml) {
 
   // まだ取得していないのか、取得に失敗したのかを混ぜない。
   // 起動直後に「取得できませんでした」と出すと、原因を探しに行かせてしまう
+  // シートは起動時に連載と関係なく取りに行くので、ここは待つだけでよい
   if (!state.sheetFetched) {
-    cell.appendChild(
-      createLine('カテゴリコードを取得してください', 'warn')
-    );
+    cell.appendChild(createLine('記事下データを取得中です', 'warn'));
     return cell;
   }
 
@@ -2072,6 +2073,7 @@ function fillSheetCell(cell, row, hit, bottomHtml) {
   }
 
   // 該当が無いときに黙って別の週を使うと、古いイチオシを貼ってしまう
+  // （連載の有無は関係ない。週は外部配信日だけで決まる）
   if (!hit) {
     cell.appendChild(
       createLine('該当期間が見つかりません', 'warn')
@@ -2079,20 +2081,6 @@ function fillSheetCell(cell, row, hit, bottomHtml) {
     cell.appendChild(
       createLine(`外部配信日：${fmtYmd(row.extAt)}`, 'sub')
     );
-    return cell;
-  }
-
-  // 週は外部配信日だけで決まるので、連載を選ぶ前でも判定できている。
-  // 先に週を出しておき、足りないもの（連載情報）は下に添える
-  if (!state.series) {
-    cell.appendChild(
-      createLine(
-        fmtPeriodRange(hit.period),
-        'range',
-        `シートB列：${hit.period.label}\n外部配信日：${fmtYmd(row.extAt)}`
-      )
-    );
-    cell.appendChild(createLine('連載情報を取得してください', 'sub warn'));
     return cell;
   }
 
@@ -2119,8 +2107,17 @@ function fillSheetCell(cell, row, hit, bottomHtml) {
 
   cell.appendChild(createLine(fmtPeriodRange(hit.period), 'range', tooltip));
 
+  // 週は外部配信日だけで決まるので、連載を選ぶ前でもコピーできる。
+  // そのときC列の grxxxx・xxxxxxxx は置き換えずに残るので、MWで直す前提の目印を添える
+  if (!state.series) {
+    cell.appendChild(createLine(UNRESOLVED_LIST_NOTE, 'sub warn'));
+  }
+
   return cell;
 }
+
+// 連載を検索せずにコピーしたときの目印。①の ●▼■ と同じく、あとで手で直す箇所
+const UNRESOLVED_LIST_NOTE = '連載未取得：一覧リンクのカテゴリコード・書籍名は未置換';
 
 // 揃っていないものを押せてしまうと誤ったHTMLが貼られるため、
 // コピーできない場合はボタン自体を無効にして理由を出す
@@ -2139,7 +2136,7 @@ function bottomCopyBlockReason(link, row, hit, bottomHtml) {
 // 記事下リンク（連載一覧＋イチオシ）側だけの事情
 function sheetBlockReason(row, hit, bottomHtml) {
   if (!state.sheetFetched) {
-    return 'カテゴリコードを取得してください（記事下リンクと連載情報に使います）';
+    return '記事下データを取得中です';
   }
 
   if (state.sheetStatus !== 'ok') {
@@ -2158,11 +2155,8 @@ function sheetBlockReason(row, hit, bottomHtml) {
     )}）`;
   }
 
-  // 連載情報が無いと grxxxx・xxxxxxxx が残ったままのHTMLになる
-  if (!state.series) {
-    return '連載情報を取得してください（一覧リンクのカテゴリコードと書籍名に使います）';
-  }
-
+  // 連載情報が無くても止めない。grxxxx・xxxxxxxx が残ったままのHTMLになるが、
+  // 連載を検索せずに作業を進められるようにする（記事下の欄に目印を出す）
   if (!bottomHtml) {
     return '記事下リンクのC列が空です';
   }

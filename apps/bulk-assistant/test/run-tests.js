@@ -1605,7 +1605,7 @@ check('シートが取れていなければ止める', () => {
   );
 });
 
-check('連載情報が無ければ止める（プレースホルダーが残るため）', () => {
+check('連載を検索していなくてもコピーできる', () => {
   const app = setup({ episodeCount: 3, series: null });
 
   typeInto(app, 1, { id: '30002' });
@@ -1614,22 +1614,52 @@ check('連載情報が無ければ止める（プレースホルダーが残る�
   const row = bottomRow(app, 0);
 
   return (
-    (row.button.disabled === true &&
-      row.button.title.includes('連載情報を取得してください')) ||
+    (row.button.disabled === false && !row.button.title) ||
     `→ ${row.button.disabled} / ${row.button.title}`
   );
 });
 
-check('連載情報が無くても、判定できた週は出す', () => {
+check('連載を検索していないときは一覧リンクを置き換えずに残す', () => {
+  const app = setup({ episodeCount: 3, series: null });
+
+  typeInto(app, 1, { id: '30002' });
+
+  const first = app.state.rows[0];
+  const hit = app.findSheetRowForRow(first);
+  const html = app.joinBottomHtml(
+    app.resolveNextLink(first).html,
+    app.buildArticleBottomHtml(hit.html, first.isFinal),
+    first.isFinal
+  );
+
+  return (
+    (html.includes('/category/grxxxx') &&
+      html.includes('『xxxxxxxx』') &&
+      html.includes('/articles/-/30002') &&
+      html.includes('【イチオシ記事】') &&
+      !html.includes('【注目記事】')) ||
+    `→ ${html}`
+  );
+});
+
+check('連載を検索していないときは、判定した週と未置換の目印を出す', () => {
   const app = setup({ episodeCount: 3, series: null });
 
   const row = bottomRow(app, 0);
 
   return (
     (row.text.includes('2026/8/16〜2026/8/22') &&
-      row.text.includes('連載情報を取得してください')) ||
+      row.text.includes('一覧リンクのカテゴリコード・書籍名は未置換')) ||
     `→ ${row.text}`
   );
+});
+
+check('連載を検索すると未置換の目印は消える', () => {
+  const app = setup({ episodeCount: 3 });
+
+  const row = bottomRow(app, 0);
+
+  return !row.text.includes('未置換') || `→ ${row.text}`;
 });
 
 check('C列が空なら止める', () => {
@@ -1650,7 +1680,7 @@ check('C列が空なら止める', () => {
   );
 });
 
-check('取得前は「失敗」ではなく「取得してください」と出す', () => {
+check('取得前は「失敗」ではなく「取得中」と出す', () => {
   const app = setup({ episodeCount: 3, sheetFetched: false, sheetRows: null });
 
   typeInto(app, 1, { id: '30002' });
@@ -1659,7 +1689,7 @@ check('取得前は「失敗」ではなく「取得してください」と出�
   const row = bottomRow(app, 0);
 
   return (
-    (row.text.includes('カテゴリコードを取得してください') &&
+    (row.text.includes('記事下データを取得中です') &&
       !row.text.includes('取得できませんでした') &&
       row.button.disabled === true) ||
     `→ ${row.text}`
