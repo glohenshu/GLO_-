@@ -176,6 +176,7 @@ export default async function handler(req, res) {
         message: result.sheet.message,
         rowCount: result.sheet.rowCount,
         via: sheet.via,
+        attempts: sheet.attempts || 0,
         samplePeriods: Array.isArray(result.sheet.rows)
           ? result.sheet.rows
               .slice(-5)
@@ -201,15 +202,33 @@ export default async function handler(req, res) {
 // kintone取得と①前回記事タブはそのまま使えるようにしておく。
 // ============================================================
 
+// GASは同じURLでも一時的に404を返すことがある
+// （2026-09-15 本番で5回中4回。同じURLで82行取れる回もあった）。
+// 404のときだけ1回取り直す。500等は取り直しても変わりにくいのでそのまま返す
+const GAS_RETRY_STATUS = 404;
+
 async function fetchSheetData() {
   const gasUrl = envValue('SHEET_GAS_URL');
 
+  // 何回GASを呼んだか。?summary=1 で取り直しが効いているかを見るために返す
+  let attempts = 0;
+
   try {
     if (gasUrl) {
-      const r = await fetch(gasUrl, { redirect: 'follow' });
+      let r = await fetch(gasUrl, { redirect: 'follow' });
+      attempts = 1;
+
+      if (r.status === GAS_RETRY_STATUS) {
+        r = await fetch(gasUrl, { redirect: 'follow' });
+        attempts = 2;
+      }
 
       if (!r.ok) {
-        throw new Error(`GAS取得エラー (${r.status})`);
+        throw new Error(
+          attempts > 1
+            ? `GAS取得エラー (${r.status}・取り直しても同じ)`
+            : `GAS取得エラー (${r.status})`
+        );
       }
 
       const text = await r.text();
@@ -237,6 +256,7 @@ async function fetchSheetData() {
         message: '',
         rows: json.values,
         via: 'gas',
+        attempts,
       };
     }
 
@@ -276,6 +296,7 @@ async function fetchSheetData() {
       message: String(e.message || e),
       rows: null,
       via: gasUrl ? 'gas' : 'sheets-api',
+      attempts,
     };
   }
 }
