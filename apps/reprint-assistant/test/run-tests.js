@@ -914,7 +914,7 @@ check('参照元の記事タイトルの記号をエスケープする', () => {
   );
 });
 
-check('通常回は 続きを読む → 余白 → 連載一覧 の順に並べる', () => {
+check('通常回は 続きを読む → 連載一覧 の順に並べる', () => {
   const app = setup();
 
   const row = app.state.rows[0];
@@ -927,15 +927,15 @@ check('通常回は 続きを読む → 余白 → 連載一覧 の順に並べ�
 
   const lines = app.joinBottomHtml(link.html, bottomHtml).split('\n');
 
+  // C列先頭の余白は落とし、続きを読むの直後に一覧を続ける
   return (
     (lines[0].startsWith('<p>▶この話の続きを読む') &&
-      lines[2] === '<p>　</p>' &&
-      lines[3].includes('【連載記事一覧】')) ||
+      lines[2].includes('【連載記事一覧】')) ||
     `→ ${lines.slice(0, 4).join(' / ')}`
   );
 });
 
-check('最終回も 文言 → 余白 → 連載一覧 の順に並べる', () => {
+check('最終回も 文言 → 連載一覧 の順に並べる', () => {
   const app = setup();
 
   const row = app.state.rows[app.state.rows.length - 1];
@@ -951,20 +951,47 @@ check('最終回も 文言 → 余白 → 連載一覧 の順に並べる', () =
   return (
     (lines[0] ===
       '<p align="center">試し読み連載は今回で最終回です。ご愛読ありがとうございました。</p>' &&
-      lines[1] === '<p>　</p>' &&
-      lines[2].includes('【連載記事一覧】')) ||
+      lines[1].includes('【連載記事一覧】')) ||
     `→ ${lines.slice(0, 3).join(' / ')}`
   );
 });
 
-check('C列を並べ替えずにそのままつなぐ', () => {
+check('C列先頭の余白だけ落として、あとは並べ替えずにつなぐ', () => {
   const app = setup();
 
-  const joined = app.joinBottomHtml('<p>先頭</p>', '<p>　</p>\n<p>本体</p>');
+  const joined = app.joinBottomHtml(
+    '<p>先頭</p>',
+    '<p>　</p>\n<p>本体</p>\n<p>　</p>\n<p>定型文</p>'
+  );
+
+  // 途中の余白は残す
+  return (
+    joined === '<p>先頭</p>\n<p>本体</p>\n<p>　</p>\n<p>定型文</p>' ||
+    `→ ${joined}`
+  );
+});
+
+check('先頭の余白は &nbsp; や align 付きでも落とす', () => {
+  const app = setup();
+
+  const got = [
+    '<p>&nbsp;</p>\n<p>本体</p>',
+    '<p align="center">　</p>\n<p>本体</p>',
+    '<p><br /></p>\n<p>本体</p>',
+  ].map((html) => app.joinBottomHtml('<p>先頭</p>', html));
 
   return (
-    joined === '<p>先頭</p>\n<p>　</p>\n<p>本体</p>' || `→ ${joined}`
+    got.every((joined) => joined === '<p>先頭</p>\n<p>本体</p>') ||
+    `→ ${got.join(' / ')}`
   );
+});
+
+check('先頭が余白でなければ何も落とさない', () => {
+  const app = setup();
+
+  const joined = app.joinBottomHtml('<p>先頭</p>', '<p>本体</p>\n<p>　</p>');
+
+  return joined === '<p>先頭</p>\n<p>本体</p>\n<p>　</p>' || `→ ${joined}`;
 });
 
 // ============================================================

@@ -1456,14 +1456,24 @@ function needsAttention(link, reason) {
 
 // 続きを読む（最終回は最終回の文言）を先頭に置き、そのままC列をつなぐ。
 //
-// C列は先頭に余白の段落 <p>　</p> が入っているので、この順で
-// 「続きを読む → 余白 → 連載記事一覧」になる。並べ替えてはいけない。
+// C列の先頭に入っている余白の段落 <p>　</p> だけは落として、
+// 「続きを読む → 連載記事一覧」と続ける（2026-09-16 指示）。
+// C列の途中にある余白（イチオシ記事の前後・定型文の前）はそのまま残す。
+// 並べ替えもしない。
 //
 //   <p align="center">試し読み連載は今回で最終回です。…</p>
-//   <p>　</p>
 //   <p>…連載記事一覧…</p>
 function joinBottomHtml(headHtml, bottomHtml) {
-  return `${headHtml}\n${String(bottomHtml || '')}`;
+  return `${headHtml}\n${dropLeadingSpacer(bottomHtml)}`;
+}
+
+// 中身が空白だけの段落を先頭から1つ落とす。
+// 余白は全角空白のほか &nbsp; や <br> のこともあるので、まとめて空とみなす
+const LEADING_SPACER_RE =
+  /^<p\b[^>]*>(?:\s|&nbsp;|&emsp;|&#12288;|<br\s*\/?>)*<\/p>[ \t]*(?:\r?\n)?/;
+
+function dropLeadingSpacer(html) {
+  return String(html || '').replace(LEADING_SPACER_RE, '');
 }
 
 // 今回の第N回 → 参照元の第(N+1)回。公開日時ではなく回数で突き合わせる。
@@ -2044,8 +2054,8 @@ function parseTimeInput(value) {
 // だったが、「ご愛読ありがとうございました。」を含めた1文にする指示があったため
 // 2026-08-19にこの形へ変更した。span でのサイズ指定も付けない。
 //
-// 直後の余白 <p>　</p> はスプレッドシートC列の先頭に入っているため、
-// ここでは出さない（出すと余白が二重になる）
+// 直後に余白 <p>　</p> は置かない。C列の先頭に入っている余白も
+// joinBottomHtml() で落とし、そのまま連載記事一覧へ続ける
 const FINAL_MESSAGES = {
   trial: '試し読み連載は今回で最終回です。ご愛読ありがとうございました。',
   series: '本連載は今回で最終回です。ご愛読ありがとうございました。',
