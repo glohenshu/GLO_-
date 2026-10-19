@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>新連載管理アシスタント</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://accounts.google.com/gsi/client" async></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>新連載管理アシスタント</h1>
+    <div class="who">
+      <span id="who-email"></span>
+      <button type="button" id="logout" class="link-button">ログアウト</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="panel steps">
+      <p class="lead">
+        「情報入力用」シートの空いているセルを、出版実績ページと楽天から埋めます。
+        書き込むのは 出版実績URL・著者名・キャッチ・内容紹介・分量・Amazon・楽天 の7列だけです。
+      </p>
+      <div class="step-buttons">
+        <button type="button" id="load" class="button primary">① シートを読み込む</button>
+        <button type="button" id="lookup" class="button" disabled>② 自動で取得</button>
+        <button type="button" id="write" class="button" disabled>③ シートに書き込む</button>
+      </div>
+      <label class="filter"><input type="checkbox" id="only-blank" checked> 空いているセルがある作品だけ表示</label>
+      <p id="status" class="message" hidden></p>
+    </section>
+
+    <section id="result" class="panel" hidden>
+      <h2>書き込んだ結果</h2>
+      <ul id="result-list"></ul>
+    </section>
+
+    <section id="books"></section>
+  </main>
+
+  <script src="/sheet-logic.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

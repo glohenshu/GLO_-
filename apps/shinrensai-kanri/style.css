@@ -1,0 +1,234 @@
+/* ============================================================
+   新連載管理アシスタント ── style.css
+
+   色・字の大きさ・余白は、新連載作成アシスタント（ルートの style.css）の
+   決まりに合わせる。字は5段、余白は4pxの倍数、地・紙・罫の3層。
+   ============================================================ */
+
+:root {
+  --t-xs: 11px;
+  --t-s:  12px;
+  --t-m:  13px;
+  --t-l:  15px;
+  --t-xl: 18px;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+
+  --bg: #EBEEE9;
+  --panel: #FFFFFF;
+  --panel-2: #F5F8F4;
+  --ink: #141712;
+  --sub: #565E56;
+  --faint: #666C66;
+  --line: rgba(22, 42, 28, .14);
+  --line-soft: rgba(22, 42, 28, .07);
+  --accent: #14684E;
+  --accent-ink: #0E4E3A;
+  --accent-soft: #E3EFE9;
+  --warn: #A24418;
+  --warn-soft: #FBEDE5;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-size: var(--t-m);
+  line-height: 1.6;
+}
+
+a { color: var(--accent-ink); }
+
+/* ---------- 上部 ---------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar h1 { font-size: var(--t-l); }
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  color: var(--sub);
+  font-size: var(--t-s);
+  min-width: 0;
+}
+
+#who-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--s4);
+  display: grid;
+  gap: var(--s4);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s4);
+}
+
+.panel h2 { font-size: var(--t-l); margin-bottom: var(--s2); }
+
+/* ---------- 手順 ---------- */
+
+.lead { color: var(--sub); margin-bottom: var(--s3); }
+
+.step-buttons { display: flex; flex-wrap: wrap; gap: var(--s2); }
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: var(--s2) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.button:disabled { opacity: .45; cursor: default; }
+.button:not(:disabled):hover { border-color: var(--accent); }
+
+.link-button {
+  font: inherit;
+  background: none;
+  border: none;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  margin-top: var(--s3);
+  color: var(--sub);
+  font-size: var(--t-s);
+}
+
+.message {
+  margin-top: var(--s3);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  white-space: pre-wrap;
+}
+.message.is-ok { background: var(--accent-soft); color: var(--accent-ink); }
+.message.is-warn, .message.is-error { background: var(--warn-soft); color: var(--warn); }
+
+#result-list { padding-left: var(--s4); }
+#result-list li.is-warn { color: var(--warn); }
+
+/* ---------- 作品ごと ---------- */
+
+#books { display: grid; gap: var(--s3); }
+
+.book-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  margin-bottom: var(--s2);
+}
+.book-head h3 { font-size: var(--t-l); }
+.book-meta { color: var(--faint); font-size: var(--t-s); flex-basis: 100%; }
+
+.badge {
+  font-size: var(--t-xs);
+  padding: 0 var(--s2);
+  border-radius: 999px;
+  background: var(--panel-2);
+}
+.badge.is-warn { background: var(--warn-soft); color: var(--warn); }
+
+.book-message { color: var(--warn); font-size: var(--t-s); margin-bottom: var(--s2); }
+.candidates { font-size: var(--t-s); padding-left: var(--s4); margin-bottom: var(--s2); }
+
+.table-scroll { overflow-x: auto; }
+
+table.cells {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 640px;
+}
+.cells th, .cells td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--s2);
+  border-top: 1px solid var(--line-soft);
+}
+.cells thead th { color: var(--faint); font-size: var(--t-xs); font-weight: 600; border-top: none; }
+.cells th[scope="row"] { width: 132px; font-weight: 600; }
+.cells thead th:nth-child(1) { width: 132px; }
+.cells thead th:nth-child(4) { width: 112px; }
+
+.col-letter { display: block; color: var(--faint); font-size: var(--t-xs); font-weight: 400; }
+
+.value {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow: auto;
+}
+.value.url { display: block; word-break: break-all; }
+
+.muted { color: var(--faint); font-size: var(--t-s); }
+
+tr.is-fill td:nth-child(3) { background: var(--accent-soft); }
+tr.is-differs td:nth-child(3) { background: var(--warn-soft); }
+
+.pick { display: inline-flex; align-items: center; gap: var(--s1); cursor: pointer; }
+.pick.is-overwrite { color: var(--warn); }
+
+/* ---------- ログイン画面 ---------- */
+
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--s4);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  display: grid;
+  gap: var(--s3);
+  justify-items: center;
+  text-align: center;
+}
+.login-card h1 { font-size: var(--t-xl); }
+.login-lead { color: var(--sub); }
+
+@media (max-width: 600px) {
+  .wrap { padding: var(--s3); }
+  .topbar { flex-wrap: wrap; }
+}
