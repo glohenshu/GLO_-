@@ -1,7 +1,12 @@
 # 新連載管理アシスタント 引継ぎメモ（2026/10/19 版）
 
 置き場所：`apps/shinrensai-kanri/`
-Vercel Project：未作成（作るときは team glo11、Root Directory は `apps/shinrensai-kanri`）
+Vercel Project：`glo-shinrensai-kanri`（team glo11、Root Directory は `apps/shinrensai-kanri`）
+本番URL：https://glo-shinrensai-kanri.vercel.app
+
+サーバーは東京（`vercel.json` の `regions: ["hnd1"]`）で動かす。
+既定のアメリカ（iad1）から楽天の検索結果を読むと、手元のPCと違う中身が返り、
+楽天ブックスの商品が見つからなかった（2026/10/19、gr2021）。
 
 ## 1. 何をするアプリか
 

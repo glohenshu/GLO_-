@@ -332,19 +332,37 @@ export function amazonUrl(links) {
 // クラス名は当てにせず、ショップ名のリンクと商品リンクの並びで探す。
 // ============================================================
 
+// 楽天ブックスのショップ名のリンク。ショップのURLは `https://www.rakuten.co.jp/book/`。
+// 表記（「楽天ブックス」）と属性（data-rpp-url-copy）のどちらかが変わっても拾えるよう、
+// どちらか一方が合えばショップ名のリンクとみなす
+const RAKUTEN_BOOKS_SHOP =
+  /<a\b[^>]*href="https?:\/\/www\.rakuten\.co\.jp\/book\/?"[^>]*>|<a\b[^>]*data-rpp-url-copy="shop"[^>]*>\s*楽天ブックス\s*</g;
+
 export function findRakutenBooksItem(searchHtml) {
   const html = String(searchHtml || '');
-  const marker = /data-rpp-url-copy="shop"[^>]*>\s*楽天ブックス\s*</g;
 
   let m;
-  while ((m = marker.exec(html))) {
-    // ショップ名は商品カードの下の方にある。その手前で最後に出てくる商品リンクが同じカードの商品
-    const before = html.slice(Math.max(0, m.index - 8000), m.index);
-    const items = [...before.matchAll(/href="https:\/\/item\.rakuten\.co\.jp\/book\/(\d+)\//g)];
+  RAKUTEN_BOOKS_SHOP.lastIndex = 0;
+  while ((m = RAKUTEN_BOOKS_SHOP.exec(html))) {
+    // ショップ名は商品カードの下の方にある。その手前で最後に出てくる商品リンクが同じカードの商品。
+    // 楽天ブックスの商品のURLは item.rakuten.co.jp/book/{番号}/（book が楽天ブックスの店舗コード）
+    const before = html.slice(Math.max(0, m.index - 20000), m.index);
+    const items = [...before.matchAll(/href="https?:\/\/item\.rakuten\.co\.jp\/book\/(\d+)\//g)];
     if (items.length) return `https://books.rakuten.co.jp/rb/${items[items.length - 1][1]}/`;
   }
 
   return '';
+}
+
+
+// 楽天ブックスの商品が見つからなかったとき、楽天が何を返してきたかを短く書く。
+// 海外のサーバーから読むと、手元のPCとは違う中身が返ることがある（2026/10/19、Vercel の iad1 で発生）
+export function describeRakutenPage(searchHtml) {
+  const html = String(searchHtml || '');
+  const title = ((html.match(/<title[^>]*>([^<]*)/i) || [])[1] || '').trim().slice(0, 40);
+  const shops = (html.match(/楽天ブックス/g) || []).length;
+  const items = (html.match(/item\.rakuten\.co\.jp\/book\//g) || []).length;
+  return `楽天が返したページ：「${title || '題名なし'}」、${html.length}文字、「楽天ブックス」${shops}件、楽天ブックスの商品リンク${items}件`;
 }
 
 

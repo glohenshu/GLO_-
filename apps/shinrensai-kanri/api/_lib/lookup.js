@@ -15,6 +15,7 @@ import {
   parsePublicationPage,
   amazonUrl,
   findRakutenBooksItem,
+  describeRakutenPage,
   searchResultLinks,
   extractTitleBlock,
   htmlToText,
@@ -221,7 +222,8 @@ export async function lookupBook({ title, url, subtitle, releaseDate }, { fetchI
       );
       result.values.rakuten = findRakutenBooksItem(searchHtml);
       if (!result.values.rakuten) {
-        result.notes.rakuten = '楽天の検索結果に楽天ブックスの商品がありません。手で貼ってください';
+        result.notes.rakuten =
+          `楽天の検索結果から楽天ブックスの商品を見つけられませんでした。手で貼ってください（${describeRakutenPage(searchHtml)}）`;
       }
     } catch (e) {
       result.notes.rakuten = failMessage(e, '楽天の検索結果') + '。手で貼ってください';

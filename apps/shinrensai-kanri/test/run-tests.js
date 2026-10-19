@@ -70,10 +70,12 @@ function pubPage({ title, subtitle = '', catchCopy = '', intro = '', author = ''
   </body></html>`;
 }
 
+// 実物と同じく、商品とショップのURLにはショップごとの店舗コードが入る（楽天ブックスは book）
 function rakutenSearch(itemId, shop = '楽天ブックス') {
+  const code = shop === '楽天ブックス' ? 'book' : 'neowing';
   return `<div class="searchresultitem">
-    <h2><a href="https://item.rakuten.co.jp/book/${itemId}/?variantId=${itemId}" class="title-link--3Yuev">書名</a></h2>
-    <div class="merchant"><a class="list-shop--3i9dy" href="https://www.rakuten.co.jp/book/" data-rpp-url-copy="shop">${shop}</a></div>
+    <h2><a href="https://item.rakuten.co.jp/${code}/${itemId}/?variantId=${itemId}" class="title-link--3Yuev">書名</a></h2>
+    <div class="merchant"><a class="list-shop--3i9dy" href="https://www.rakuten.co.jp/${code}/" data-rpp-url-copy="shop">${shop}</a></div>
   </div>`;
 }
 
@@ -168,6 +170,18 @@ function fakeFetch(routes) {
   eq('楽天：楽天ブックスが2件目でも拾う',
     pub.findRakutenBooksItem(rakutenSearch('111', 'ネオウィング 楽天市場店') + rakutenSearch('18824158')),
     'https://books.rakuten.co.jp/rb/18824158/');
+  eq('楽天：ショップ名の属性が無くても、ショップのURLで見分ける',
+    pub.findRakutenBooksItem(
+      '<a href="https://item.rakuten.co.jp/bookfan/bk-434469998x/">a</a><a href="https://www.rakuten.co.jp/bookfan/">bookfan</a>' +
+      '<a href="https://item.rakuten.co.jp/book/18778713/?s-id=x">b</a><a href="https://www.rakuten.co.jp/book/">Rakuten Books</a>'
+    ),
+    'https://books.rakuten.co.jp/rb/18778713/');
+  eq('楽天：ページ上部の楽天ブックスへのリンク（商品より前）は無視する',
+    pub.findRakutenBooksItem('<a href="https://www.rakuten.co.jp/book/">本</a>' + rakutenSearch('999', 'ネオウィング 楽天市場店')),
+    '');
+  check('楽天：見つからなかったときの説明に、ページの題名と件数が入る',
+    /「【楽天市場】X」.*「楽天ブックス」0件.*商品リンク0件/.test(pub.describeRakutenPage('<title>【楽天市場】X</title>')),
+    pub.describeRakutenPage('<title>【楽天市場】X</title>'));
 
   eq('検索結果：商品ページだけ・重複なし',
     pub.searchResultLinks('<a href="https://www.gentosha-book.com/products/9784344700246/">a</a><a href="https://www.gentosha-book.com/products/9784344700246/">b</a><a href="https://www.gentosha-book.com/news/">c</a>'),
