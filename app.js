@@ -4,6 +4,7 @@ const state = {
   record: null,      // kintone
   pub: null,         // 出版実績
   sheetRows: null,   // [B, C] の配列
+  categoryCode: '',  // 取得した作品のカテゴリID（gr1966）。currentCategoryCode() で読む
   authors: [],       // { name, kana, intro, sns: {x,instagram,facebook}, links: [] }
 };
 
@@ -140,41 +141,146 @@ $('tabs').addEventListener('click', (e) => {
 // 情報取得
 // ============================================================
 
-$('fetch-btn').addEventListener('click', fetchInfo);
-$('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchInfo(); });
+$('fetch-btn').addEventListener('click', runSearch);
+$('search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(); });
 
-// 入力欄は数字だけを持ち、頭の「gr」は画面に固定表示している。
-// API・表示・本文テンプレートの置換はいずれもカテゴリID（gr1966）の
-// 形を前提にしているため、ここで組み立てて全箇所で使う。
+// 打ち直しはじめたらエラー表示だけ消す
+$('search-input').addEventListener('input', () => {
+  const status = $('fetch-status');
+  if (status.classList.contains('error')) { status.textContent = ''; status.classList.remove('error'); }
+});
+
+// 候補は「押したらその作品を読み込む」だけ。押した後は一覧を閉じる
+$('candidates-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('button.candidate');
+  if (!btn || !btn.dataset.code) return;
+
+  $('search-input').value = categoryDigits(btn.dataset.code);
+  fetchInfo(btn.dataset.code);
+});
+
+// 検索欄は書籍名とカテゴリコードの両方を受けるので、取得中の作品のコードは
+// fetchInfo() で控えておく。API・表示・本文テンプレートの置換はいずれも
+// カテゴリID（gr1966）の形を前提にしているため、全箇所でこれを使う。
 function currentCategoryCode() {
-  const digits = $('code-input').value.replace(/[^0-9]/g, '');
-  return digits ? `gr${digits}` : '';
+  return state.categoryCode || '';
 }
 
-// 半角数字だけを受け付ける。
-// ・全角数字はIMEの状態によって入りやすいので半角へ直す
-// ・「gr1966」をそのまま貼り付けたときは gr を落として数字だけ残す
-// ・それ以外の文字は捨てる
-$('code-input').addEventListener('input', (e) => {
-  const el = e.target;
-  const before = el.value;
-  const after = before
+// 入力が「カテゴリコードそのもの」かどうか。
+// 1966 / gr1966 / GR1966 / 全角の１９６６ を受ける。
+// それ以外（書籍名）は部分一致の検索に回す
+function isCodeQuery(value) {
+  return /^\s*(?:[gGｇＧ][rRｒＲ])?[0-9０-９]+\s*$/.test(String(value || ''));
+}
+
+// 全角数字は半角に直し、先頭の gr と数字以外を落とす
+function categoryDigits(value) {
+  return String(value || '')
     .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/^[\s]*[gGｇＧ][rRｒＲ]/, '')
     .replace(/[^0-9]/g, '');
+}
 
-  if (after === before) return;
-
-  // 消えた文字数のぶんだけカーソルを戻す
-  const caret = Math.max(0, (el.selectionStart ?? after.length) - (before.length - after.length));
-  el.value = after;
-  el.setSelectionRange(caret, caret);
-});
-
-async function fetchInfo() {
-  const code = currentCategoryCode();
+function setFetchStatus(message, isError = false) {
   const status = $('fetch-status');
-  if (!code) { status.textContent = 'カテゴリコードの番号を入力してください（半角数字）'; status.classList.add('error'); return; }
+  status.textContent = message;
+  status.classList.toggle('error', Boolean(isError));
+}
+
+// 検索ボタン・Enterの入口。
+// 数字だけならカテゴリコードで取得し、それ以外は書籍名で候補を出す
+function runSearch() {
+  const text = $('search-input').value.trim();
+
+  if (!text) { setFetchStatus('書籍名かカテゴリコードを入力してください', true); return; }
+
+  if (isCodeQuery(text)) {
+    fetchInfo(`gr${categoryDigits(text)}`);
+    return;
+  }
+
+  // kintone の like は1文字だとほとんど拾わない（「猫」で0件など）。
+  // 「一致する連載がありません」と出ると作品が無いと誤解するので、問い合わせる前に止める
+  if ([...text].length < 2) { setFetchStatus('2文字以上で入力してください', true); return; }
+
+  fetchCandidates(text);
+}
+
+// 書籍名の部分一致で作品候補を出す。
+// ここでは作品をまだ決めないので、取得済みの内容や手入力には触らない
+async function fetchCandidates(text) {
+  setFetchStatus('検索中…');
+  $('fetch-btn').disabled = true;
+
+  try {
+    const r = await fetch(`/api/fetch-info?q=${encodeURIComponent(text)}`);
+    const data = await r.json().catch(() => null);
+    const candidates = (data && data.candidates) || {};
+    const items = Array.isArray(candidates.items) ? candidates.items : [];
+
+    renderCandidates(items);
+
+    if (!r.ok || !data) {
+      setFetchStatus(`検索に失敗しました（HTTP ${r.status}）`, true);
+    } else if (!items.length) {
+      setFetchStatus(candidates.message || `「${text}」に一致する連載がありません`, true);
+    } else {
+      setFetchStatus(`${items.length}件見つかりました。作品を選んでください`);
+    }
+  } catch (e) {
+    renderCandidates([]);
+    setFetchStatus('通信エラーが発生しました', true);
+  } finally {
+    $('fetch-btn').disabled = false;
+  }
+}
+
+function renderCandidates(items) {
+  const list = $('candidates-list');
+  list.textContent = '';
+
+  if (!items.length) { $('candidates').hidden = true; return; }
+
+  items.forEach((item) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'candidate';
+    btn.dataset.code = item.categoryCode || '';
+
+    const title = document.createElement('span');
+    title.className = 'candidate-title';
+    title.textContent = item.bookTitle || '（書籍タイトルなし）';
+
+    // カテゴリコードと制作Noは、同じ書籍名が複数あるときの決め手になる
+    const meta = document.createElement('span');
+    meta.className = 'candidate-meta';
+    meta.textContent = [
+      item.categoryCode || 'コード未登録',
+      item.productionNo ? `制作No ${item.productionNo}` : '',
+    ].filter(Boolean).join('　');
+
+    btn.append(title, meta);
+
+    // カテゴリIDが無いレコードは選んでも出版実績・記事下リンクを引けない
+    if (!item.categoryCode) {
+      btn.disabled = true;
+      btn.title = 'カテゴリIDが未登録です';
+    }
+
+    const li = document.createElement('li');
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+
+  $('candidates').hidden = false;
+}
+
+async function fetchInfo(code) {
+  const status = $('fetch-status');
+  if (!code) { setFetchStatus('書籍名かカテゴリコードを入力してください', true); return; }
+
+  state.categoryCode = code;
+  renderCandidates([]);
 
   status.classList.remove('error');
   status.textContent = '取得中…';

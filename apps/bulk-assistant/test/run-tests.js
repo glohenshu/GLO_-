@@ -167,7 +167,7 @@ const APP_SOURCE =
   PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, TAB_NAMES, FINAL_MESSAGE,
   clampEpisodeCount, parseCountInput, setEpisodeCount, commitCountInput,
   syncBulkInputs, setBulkStatus,
-  getCategoryCode, toCategoryDigits, isCodeQuery, renderCandidates,
+  getCategoryCode, toCategoryDigits, isCodeQuery, renderCandidates, runSearch,
   buildRows, renderPrevTable, updatePrevRow, renderCommon,
   applyBulkValues, clearArticleIds, clearArticleTitles, splitBulkLines,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
@@ -194,7 +194,7 @@ class FixedDate extends RealDate {
   }
 }
 
-function loadApp() {
+function loadApp(options = {}) {
   const document = {
     getElementById: () => makeNode('div'),
     querySelector: () => makeNode('div'),
@@ -216,7 +216,7 @@ function loadApp() {
     navigator: {},
     // 起動時のシート取得が後から表を作り直すと、テストの途中で状態が入れ替わる。
     // 決着しないPromiseを返して、通信は起きなかったものとして扱う
-    fetch: () => new Promise(() => {}),
+    fetch: options.fetch || (() => new Promise(() => {})),
   };
 
   sandbox.window = sandbox;
@@ -517,6 +517,61 @@ check('カテゴリIDが無い候補は選べない', () => {
     (button.disabled === true && button.title.includes('カテゴリID')) ||
     `→ ${button.disabled} / ${button.title}`
   );
+});
+
+// 起動時の通信（シートの先読み）は数えず、検索で増えた問い合わせだけを見る
+function recordSearches() {
+  const urls = [];
+  const fetch = (url) => {
+    urls.push(String(url));
+    return new Promise(() => {});
+  };
+  return { urls, fetch, searched: () => urls.filter((u) => /[?&](q|code)=/.test(u)) };
+}
+
+check('1文字の書籍名では問い合わせずに「2文字以上」と出す', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  const got = ['猫', ' 母 ', '　女　', 'a'].map((value) => {
+    app.el.searchInput.value = value;
+    app.runSearch();
+    return app.el.fetchStatus.textContent;
+  });
+
+  return (
+    (rec.searched().length === 0 &&
+      got.every((text) => text === '2文字以上で入力してください') &&
+      app.el.fetchStatus.className.includes('error')) ||
+    `→ ${rec.searched().join(',')} / ${got.join(' | ')}`
+  );
+});
+
+check('2文字なら書籍名で問い合わせる', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  app.el.searchInput.value = '約束';
+  app.runSearch();
+
+  const urls = rec.searched();
+
+  return (
+    (urls.length === 1 && urls[0].includes(`q=${encodeURIComponent('約束')}`)) ||
+    `→ ${urls.join(',')}`
+  );
+});
+
+check('1桁のカテゴリコードは止めずにそのまま取得する', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  app.el.searchInput.value = '5';
+  app.runSearch();
+
+  const urls = rec.searched();
+
+  return (urls.length === 1 && urls[0].includes('code=gr5')) || `→ ${urls.join(',')}`;
 });
 
 check('候補が無ければ一覧そのものを閉じる', () => {
@@ -1510,6 +1565,22 @@ check('書籍名の［人気連載ピックアップ］は外す', () => {
   return (
     target.bookTitle === '七つのショートしょーと' || `→ ${target.bookTitle}`
   );
+});
+
+check('注目・人気以外のピックアップ表記も外す（［2025年話題作ピックアップ］など）', () => {
+  const cases = [
+    ['あら、50歳独身いいかも！［2025年話題作ピックアップ］', 'あら、50歳独身いいかも！'],
+    ['夫 失格［イチオシ連載ピックアップ］', '夫 失格'],
+    ['59才　失くした物と得た物[反響連載ピックアップ]', '59才　失くした物と得た物'],
+    ['泥の中で咲け［文庫改訂版］', '泥の中で咲け［文庫改訂版］'],
+  ];
+
+  const got = cases.map(([title]) => {
+    const app = setup({ episodeCount: 3, series: { ...SERIES, bookTitle: title } });
+    return app.getListTarget().bookTitle;
+  });
+
+  return got.every((title, i) => title === cases[i][1]) || `→ ${got.join(' / ')}`;
 });
 
 check('書籍名の『』は二重にしない', () => {

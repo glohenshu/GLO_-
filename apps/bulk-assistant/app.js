@@ -12,6 +12,9 @@
 
 const API_ENDPOINT = '/api/bulk-data';
 
+// 書籍名で探すときの最短の文字数。kintone の like は1文字だとほとんど拾わない
+const MIN_TITLE_QUERY_LENGTH = 2;
+
 // 作る回数の範囲。
 // 1回だけの連載もありうるので下限は1。
 // 上限は打ち間違いで数百行を作ってしまわないための歯止め
@@ -375,6 +378,14 @@ function runSearch() {
 
   if (isCodeQuery(text)) {
     fetchSeriesData(getCategoryCode());
+    return;
+  }
+
+  // kintone の like は1文字だとほとんど拾わない（「猫」で0件など）。
+  // 「一致する連載がありません」と出ると連載が無いと誤解するので、問い合わせる前に止める
+  if ([...text].length < MIN_TITLE_QUERY_LENGTH) {
+    setStatus('2文字以上で入力してください', true);
+    el.searchInput.focus();
     return;
   }
 
@@ -2485,11 +2496,14 @@ function stripBookTitleBrackets(value) {
   return match ? match[1] : title;
 }
 
-// 一覧リンクに出す書籍名は［注目連載ピックアップ］等を外した形にする
+// 一覧リンクに出す書籍名は［注目連載ピックアップ］等を外した形にする。
+// ［2025年話題作ピックアップ］［イチオシ連載ピックアップ］なども含め、
+// 「［…ピックアップ］」の形ならすべて外す（種類を並べると新しい表記で漏れる）
+const PICKUP_LABEL_RE = /[［\[][^［］\[\]]*ピックアップ[］\]]/g;
+
 function stripPickupSuffix(value) {
   return String(value || '')
-    .replace(/［(?:注目|人気)連載ピックアップ］/g, '')
-    .replace(/\[(?:注目|人気)連載ピックアップ\]/g, '')
+    .replace(PICKUP_LABEL_RE, '')
     .trim();
 }
 

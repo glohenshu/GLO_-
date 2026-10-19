@@ -5,9 +5,21 @@
 export default async function handler(req, res) {
   const code = (req.query.code || '').trim();
 
+  // 書籍名の部分一致で連載候補を出すための検索語
+  const q = (req.query.q || '').trim();
+
+  // 書籍名で探すときは候補一覧だけ返す。
+  // 出版実績・記事下リンクは、候補から選んだあと ?code= で取る
+  if (!code && q) {
+    res.status(200).json({
+      candidates: await searchSeriesCandidates(q),
+    });
+    return;
+  }
+
   if (!code) {
     res.status(400).json({
-      error: 'カテゴリコードが指定されていません',
+      error: '書籍名かカテゴリコードが指定されていません',
     });
     return;
   }
@@ -260,6 +272,66 @@ export default async function handler(req, res) {
   // ============================================================
 
   res.status(200).json(result);
+}
+
+
+// ============================================================
+// 書籍名で連載を探す
+//
+// kintone「GLO連載情報」を書籍タイトルの部分一致で引く。
+// 返す形は新規一括集中アシスタント（apps/bulk-assistant）の candidates と同じ。
+// この関数は throw しない。失敗の理由は message に入れる
+// ============================================================
+
+async function searchSeriesCandidates(q) {
+  try {
+    const base = process.env.KINTONE_BASE_URL;
+    const token = process.env.KINTONE_API_TOKEN;
+    const appId = process.env.KINTONE_APP_ID;
+
+    if (!base || !token || !appId) {
+      throw new Error('kintoneの環境変数が未設定です');
+    }
+
+    // kintoneの like は部分一致。件数が多い連載でも拾えるよう上限は多めにする
+    const escaped = q.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const query = encodeURIComponent(
+      `書籍タイトル like "${escaped}" limit 100`
+    );
+
+    const r = await fetch(
+      `${base}/k/v1/records.json?app=${appId}&query=${query}`,
+      { headers: { 'X-Cybozu-API-Token': token } }
+    );
+
+    if (!r.ok) {
+      throw new Error(`kintone API エラー (${r.status})`);
+    }
+
+    const json = await r.json();
+
+    // 新しく登録したものほど上に出したいので、レコード番号の降順に並べる
+    const items = (json.records || [])
+      .map((f) => ({
+        recordId: f['$id']?.value ?? '',
+        categoryCode: f['カテゴリID']?.value ?? '',
+        bookTitle: f['書籍タイトル']?.value ?? '',
+        productionNo: f['制作No']?.value ?? '',
+      }))
+      .sort((a, b) => Number(b.recordId) - Number(a.recordId));
+
+    return {
+      status: 'ok',
+      message: items.length ? '' : `「${q}」に一致する連載がありません`,
+      items,
+    };
+  } catch (e) {
+    return {
+      status: 'error',
+      message: String(e.message || e),
+      items: [],
+    };
+  }
 }
 
 

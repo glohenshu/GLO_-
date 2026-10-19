@@ -12,16 +12,21 @@
   <div class="topbar-inner">
     <h1>新連載作成アシスタント <span class="ver">Ver.1</span></h1>
 
+    <!-- 数字だけならカテゴリコード、それ以外は書籍名の部分一致で候補を出す -->
     <div class="search-row">
-      <label for="code-input">カテゴリコード</label>
-      <span class="code-field">
-        <span class="code-prefix" aria-hidden="true">gr</span>
-        <input id="code-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-               placeholder="1944" autocomplete="off" spellcheck="false"
-               aria-label="カテゴリコードの番号（grより後ろの数字）">
-      </span>
-      <button id="fetch-btn" class="primary">情報取得</button>
+      <label for="search-input">連載を探す</label>
+      <input id="search-input" type="text" class="search-input"
+             placeholder="書籍名の一部、またはカテゴリコード（1944）"
+             autocomplete="off" spellcheck="false"
+             aria-label="書籍名の一部、またはカテゴリコード">
+      <button id="fetch-btn" class="primary">検索</button>
       <span id="fetch-status" class="fetch-status" role="status"></span>
+    </div>
+
+    <!-- 連載候補（書籍名で検索したとき） -->
+    <div id="candidates" class="candidates" hidden>
+      <p class="candidates-head">連載候補</p>
+      <ul id="candidates-list" class="candidates-list"></ul>
     </div>
 
     <div id="basic-info" class="basic-info" hidden>

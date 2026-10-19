@@ -43,13 +43,33 @@ export default async function handler(req, res) {
 
   const categoryCode = String(req.query.code || '').trim();
 
+  // 書籍名の部分一致で連載候補を出すための検索語
+  const searchQuery = String(req.query.q || '').trim();
+
   // ?summary=1 は診断用。rows を返さず件数と末尾の期間だけ見る
   const summaryOnly = String(req.query.summary || '') === '1';
+
+  // 書籍名で探すときは候補一覧だけ返す。
+  // 参照元（記事データ341）とシートは連載が決まってから ?code= で取る
+  if (!categoryCode && searchQuery) {
+    const candidates = await searchSeriesCandidates({
+      base,
+      token: seriesToken,
+      appId: seriesAppId,
+      query: searchQuery,
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      query: searchQuery,
+      candidates,
+    });
+  }
 
   if (!categoryCode) {
     return res.status(400).json({
       status: 'error',
-      error: 'カテゴリコードを指定してください',
+      error: '書籍名かカテゴリコードを指定してください',
     });
   }
 
@@ -193,17 +213,17 @@ export default async function handler(req, res) {
       query,
     });
 
+    const targetKey = seriesTitleKey(normalizedTitle);
+
     const articles = records
       .map(mapArticle)
 
       // 今回入力したカテゴリコード自身は候補にしない
       .filter((article) => article.categoryCode !== categoryCode)
 
-      // 「プレナイト」「プレナイト［人気連載ピックアップ］」だけを残す
-      .filter(
-        (article) =>
-          normalizeSeriesTitle(article.bookTitle) === normalizedTitle
-      );
+      // 「プレナイト」「プレナイト［人気連載ピックアップ］」だけを残す。
+      // 記号・大文字小文字・全角半角の違いは同じ書名とみなす（seriesTitleKey）
+      .filter((article) => isSameSeriesTitle(article.bookTitle, normalizedTitle, targetKey));
 
     const candidates = groupSeriesCandidates(articles);
 
@@ -454,6 +474,49 @@ async function fetchAllRecords({ base, token, appId, query, fields }) {
   return allRecords;
 }
 
+// 書籍名の部分一致でGLO連載情報の候補を返す（新規一括集中アシスタントと同じ形）。
+// この関数は throw しない。失敗の理由は message に入れる
+async function searchSeriesCandidates({ base, token, appId, query }) {
+  try {
+    if (!base || !token || !appId) {
+      throw new Error(
+        'kintoneの環境変数（KINTONE_BASE_URL / KINTONE_API_TOKEN / KINTONE_APP_ID）が未設定です'
+      );
+    }
+
+    // kintoneの like は部分一致。件数が多い連載でも拾えるよう上限は多めにする
+    const records = await fetchRecords({
+      base,
+      token,
+      appId,
+      query: `書籍タイトル like "${escapeQueryValue(query)}" limit 100`,
+    });
+
+    // 新しく登録したものほど上に出したいので、レコード番号の降順に並べる。
+    // order by をクエリに入れるとフィールド名の違いで落ちうるのでこちらで並べる
+    const items = records
+      .map((record) => ({
+        recordId: record['$id']?.value || '',
+        categoryCode: record['カテゴリID']?.value || '',
+        bookTitle: record['書籍タイトル']?.value || '',
+        productionNo: record['制作No']?.value || '',
+      }))
+      .sort((a, b) => Number(b.recordId) - Number(a.recordId));
+
+    return {
+      status: 'ok',
+      message: items.length ? '' : `「${query}」に一致する連載がありません`,
+      items,
+    };
+  } catch (e) {
+    return {
+      status: 'error',
+      message: String(e.message || e),
+      items: [],
+    };
+  }
+}
+
 // ============================================================
 // 記事データアプリのレコード → アプリ内形式
 // ============================================================
@@ -479,15 +542,56 @@ function mapArticle(record) {
 //
 //   プレナイト［注目連載ピックアップ］
 //   プレナイト［人気連載ピックアップ］
+//   あら、50歳独身いいかも！［2025年話題作ピックアップ］
 //     ↓
-//   プレナイト
+//   プレナイト／あら、50歳独身いいかも！
+//
+// ピックアップ表記は「注目連載」「人気連載」以外にも
+// ［イチオシ連載ピックアップ］［2025年話題作ピックアップ］［反響連載ピックアップ］など
+// 十数種類ある（2026-10-19時点のGLO連載情報）。種類を並べると新しい表記で漏れるので、
+// 「［…ピックアップ］」の形ならすべて外す。
+// ［文庫版］［復刻連載］［〇〇特集］などピックアップ以外の表記は外さない
 // ============================================================
+
+const PICKUP_LABEL_RE = /[［\[][^［］\[\]]*ピックアップ[］\]]/g;
 
 function normalizeSeriesTitle(title) {
   return String(title || '')
-    .replace(/［(?:注目|人気)連載ピックアップ］/g, '')
-    .replace(/\[(?:注目|人気)連載ピックアップ\]/g, '')
+    .replace(PICKUP_LABEL_RE, '')
     .trim();
+}
+
+// ============================================================
+// 同じ書名かどうか（参照元の照合用）
+//
+// 記事データ341の書籍タイトルは、GLO連載情報と表記が揺れていることがある
+// （2026-10-19 の実データ突合で確認）。
+//   ・「～」が「?」に化けている       ザ・総選挙　?失われた三〇年の総決算?（gr720）
+//   ・同じ連載の中で大文字小文字が混在  東京フェイクLOVE? と 東京フェイクLove?（gr1358）
+//   ・読点の有無                      幸せを呼ぶ、シンデレラおばさんと王子様（gr1620）
+// そこで、全角半角をそろえ（NFKC）、小文字にし、文字と数字以外（記号・空白）を
+// 落とした形で比べる。kintone の like も記号と大文字小文字を区別しないので、
+// 候補を拾う範囲は変わらず、記号だけが違う書名を取りこぼさなくなる。
+//
+// 文字と数字は残すので、
+//   「…いいかも！」と「…いいかも！2」、「59才…」と「59才…[コンテスト特集]」は別の書名のまま。
+// 画面に出す書名・kintone への検索語はこの形にしない（normalizeSeriesTitle のまま）
+// ============================================================
+
+function seriesTitleKey(title) {
+  return String(title || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function isSameSeriesTitle(bookTitle, normalizedTitle, targetKey = seriesTitleKey(normalizedTitle)) {
+  const title = normalizeSeriesTitle(bookTitle);
+
+  // 記号だけの書名は比べようがないので、そのときだけ元の形で完全一致を見る
+  if (!targetKey) return title === normalizedTitle;
+
+  return seriesTitleKey(title) === targetKey;
 }
 
 // ============================================================

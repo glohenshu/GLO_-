@@ -165,7 +165,8 @@ const APP_SOURCE =
   MIN_EPISODE_COUNT, MAX_EPISODE_COUNT,
   PREV_TITLE_FALLBACK, PREV_COPY_LABEL, COPIED_LABEL, NEXT_LINK_PLACEHOLDER,
   applySourceSelection, setEpisodeCount, parseCountInput, clampEpisodeCount,
-  getCategoryCode, toCategoryDigits, hasUnusableCodeChars,
+  getCategoryCode, toCategoryDigits, isCodeQuery, runSearch, renderCandidates,
+  fetchReprintData, resetSeries,
   buildRows, renderPrevTable, renderBottomTable, updatePrevRow,
   applyBulkIds, clearArticleIds,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
@@ -193,7 +194,7 @@ class FixedDate extends RealDate {
   }
 }
 
-function loadApp() {
+function loadApp(options = {}) {
   const document = {
     getElementById: () => makeNode('div'),
     querySelector: () => makeNode('div'),
@@ -213,7 +214,8 @@ function loadApp() {
     location: { search: '' },
     history: { replaceState() {} },
     navigator: {},
-    fetch: () => Promise.reject(new Error('テストではAPIを呼ばない')),
+    // 通信を確かめるテストだけ options.fetch で差し替える
+    fetch: options.fetch || (() => Promise.reject(new Error('テストではAPIを呼ばない'))),
   };
 
   sandbox.window = sandbox;
@@ -223,6 +225,20 @@ function loadApp() {
   vm.runInContext(APP_SOURCE, sandbox, { filename: 'app.js' });
 
   return sandbox.__exports;
+}
+
+// fetch の応答の形だけ真似る
+function jsonResponse(body, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.resolve(body),
+  };
+}
+
+// 画面側の await が一巡するのを待つ
+function flush() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 // ------------------------------------------------------------
@@ -287,7 +303,7 @@ const SHEET_ROWS = [
 // ------------------------------------------------------------
 
 function setup(options = {}) {
-  const app = loadApp();
+  const app = loadApp({ fetch: options.fetch });
   const { state } = app;
 
   const articles =
@@ -392,12 +408,12 @@ function check(name, fn) {
 // 1. 回数入力
 // ============================================================
 
-group('カテゴリコード入力');
+group('連載の検索');
 
 check('数字だけ入力すると gr を付けて問い合わせる', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '1974';
+  app.el.searchInput.value = '1974';
 
   return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
 });
@@ -405,9 +421,8 @@ check('数字だけ入力すると gr を付けて問い合わせる', () => {
 check('gr 付きで貼り付けても二重にならない', () => {
   const app = loadApp();
 
-  const cases = ['gr1974', 'GR1974', ' gr1974 '];
-  const got = cases.map((value) => {
-    app.el.codeInput.value = value;
+  const got = ['gr1974', 'GR1974', ' gr1974 '].map((value) => {
+    app.el.searchInput.value = value;
     return app.getCategoryCode();
   });
 
@@ -417,71 +432,337 @@ check('gr 付きで貼り付けても二重にならない', () => {
 check('全角数字を半角に直す', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '１９７４';
+  app.el.searchInput.value = '１９７４';
 
   return app.getCategoryCode() === 'gr1974' || `→ ${app.getCategoryCode()}`;
 });
 
-check('数字以外は落とす', () => {
+check('数字だけならコード、それ以外は書籍名の検索に回す', () => {
   const app = loadApp();
 
+  const code = ['1974', 'gr1974', 'GR1974', '１９７４', ' 1974 '];
+  const text = ['七つの', '七つのショートしょーと', 'gr', '七つの2', ''];
+
   return (
-    (app.toCategoryDigits('19a74') === '1974' &&
-      app.toCategoryDigits('19-74') === '1974' &&
-      app.toCategoryDigits('あ') === '') ||
-    `→ ${app.toCategoryDigits('19a74')} / ${app.toCategoryDigits('19-74')}`
+    (code.every((v) => app.isCodeQuery(v) === true) &&
+      text.every((v) => app.isCodeQuery(v) === false)) ||
+    '→ 判定が違います'
   );
 });
 
-check('空欄なら問い合わせないよう空文字を返す', () => {
+check('書籍名のときはカテゴリコードとして扱わない', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '   ';
+  app.el.searchInput.value = '七つの2';
 
   return app.getCategoryCode() === '' || `→ ${app.getCategoryCode()}`;
 });
 
-check('入力欄で数字以外を打つと取り除いて理由を出す', () => {
+check('書籍名で検索すると ?q= で問い合わせ、候補を出す', () => {
+  const urls = [];
+  const app = loadApp({
+    fetch: (url) => {
+      urls.push(url);
+      return Promise.resolve(
+        jsonResponse({
+          status: 'ok',
+          candidates: {
+            status: 'ok',
+            message: '',
+            items: [
+              {
+                recordId: '2161',
+                categoryCode: 'gr1974',
+                bookTitle: '七つのショートしょーと',
+                productionNo: '22818',
+              },
+            ],
+          },
+        })
+      );
+    },
+  });
+
+  app.el.searchInput.value = '七つの';
+  app.runSearch();
+
+  return flush().then(() => {
+    const buttons = findNodes(
+      app.el.candidatesList,
+      (node) => node.tagName === 'BUTTON'
+    );
+
+    return (
+      (urls.length === 1 &&
+        urls[0] === `/api/reprint-data?q=${encodeURIComponent('七つの')}` &&
+        app.el.candidates.hidden === false &&
+        buttons.length === 1 &&
+        buttons[0].dataset.code === 'gr1974' &&
+        textOf(buttons[0]).includes('制作No 22818')) ||
+      `→ ${urls.join(',')} / ${buttons.length}`
+    );
+  });
+});
+
+check('カテゴリIDが無い候補は選べない', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = '19a74';
-  app.el.codeInput.dispatch('input');
+  app.renderCandidates([
+    { recordId: '1', categoryCode: '', bookTitle: 'コード未登録の連載' },
+  ]);
+
+  const button = findNodes(
+    app.el.candidatesList,
+    (node) => node.tagName === 'BUTTON'
+  )[0];
 
   return (
-    (app.el.codeInput.value === '1974' &&
-      app.el.fetchStatus.textContent.includes('半角数字') &&
+    (button.disabled === true && button.title.includes('カテゴリID')) ||
+    `→ ${button.disabled} / ${button.title}`
+  );
+});
+
+check('候補を押すとその連載を ?code= で読み込む', () => {
+  const urls = [];
+  const app = loadApp({
+    fetch: (url) => {
+      urls.push(url);
+      return new Promise(() => {});
+    },
+  });
+
+  app.renderCandidates([
+    { recordId: '2161', categoryCode: 'gr1974', bookTitle: '七つのショートしょーと' },
+  ]);
+
+  const button = findNodes(
+    app.el.candidatesList,
+    (node) => node.tagName === 'BUTTON'
+  )[0];
+
+  app.el.candidatesList.dispatch('click', { target: button });
+
+  return (
+    (urls[0] === '/api/reprint-data?code=gr1974' &&
+      app.el.searchInput.value === '1974') ||
+    `→ ${urls.join(',')} / ${app.el.searchInput.value}`
+  );
+});
+
+check('空欄なら問い合わせずに理由を出す', () => {
+  const urls = [];
+  const app = loadApp({
+    fetch: (url) => {
+      urls.push(url);
+      return new Promise(() => {});
+    },
+  });
+
+  app.el.searchInput.value = '   ';
+  app.runSearch();
+
+  return (
+    (urls.length === 0 &&
+      app.el.fetchStatus.textContent.includes('書籍名かカテゴリコード') &&
       app.el.fetchStatus.className.includes('error')) ||
-    `→ ${app.el.codeInput.value} / ${app.el.fetchStatus.textContent}`
+    `→ ${urls.length} / ${app.el.fetchStatus.textContent}`
   );
 });
 
-check('全角数字と gr は黙って直す（咎めない）', () => {
+check('打ち直しはじめたらエラー表示を消す', () => {
   const app = loadApp();
 
-  app.el.codeInput.value = 'gr１９７４';
-  app.el.codeInput.dispatch('input');
+  app.el.searchInput.value = '';
+  app.runSearch();
 
-  return (
-    (app.el.codeInput.value === '1974' &&
-      !app.el.fetchStatus.className.includes('error')) ||
-    `→ ${app.el.codeInput.value} / ${app.el.fetchStatus.textContent}`
-  );
-});
-
-check('直したあとは警告が消える', () => {
-  const app = loadApp();
-
-  app.el.codeInput.value = '19a74';
-  app.el.codeInput.dispatch('input');
-
-  app.el.codeInput.value = '1975';
-  app.el.codeInput.dispatch('input');
+  app.el.searchInput.value = '七';
+  app.el.searchInput.dispatch('input');
 
   return (
     (!app.el.fetchStatus.className.includes('error') &&
       app.el.fetchStatus.textContent === '') ||
     `→ ${app.el.fetchStatus.textContent}`
   );
+});
+
+// 起動時の通信（シートの先読み）は数えず、検索で増えた問い合わせだけを見る
+function recordSearches() {
+  const urls = [];
+  const fetch = (url) => {
+    urls.push(String(url));
+    return new Promise(() => {});
+  };
+  return { urls, fetch, searched: () => urls.filter((u) => /[?&](q|code)=/.test(u)) };
+}
+
+check('1文字の書籍名では問い合わせずに「2文字以上」と出す', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  const got = ['猫', ' 母 ', '　女　', 'a'].map((value) => {
+    app.el.searchInput.value = value;
+    app.runSearch();
+    return app.el.fetchStatus.textContent;
+  });
+
+  return (
+    (rec.searched().length === 0 &&
+      got.every((text) => text === '2文字以上で入力してください') &&
+      app.el.fetchStatus.className.includes('error')) ||
+    `→ ${rec.searched().join(',')} / ${got.join(' | ')}`
+  );
+});
+
+check('2文字なら書籍名で問い合わせる', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  app.el.searchInput.value = '約束';
+  app.runSearch();
+
+  const urls = rec.searched();
+
+  return (
+    (urls.length === 1 && urls[0].includes(`q=${encodeURIComponent('約束')}`)) ||
+    `→ ${urls.join(',')}`
+  );
+});
+
+check('1桁のカテゴリコードは止めずにそのまま取得する', () => {
+  const rec = recordSearches();
+  const app = loadApp({ fetch: rec.fetch });
+
+  app.el.searchInput.value = '5';
+  app.runSearch();
+
+  const urls = rec.searched();
+
+  return (urls.length === 1 && urls[0].includes('code=gr5')) || `→ ${urls.join(',')}`;
+});
+
+// ------------------------------------------------------------
+// 取得に失敗したとき
+//
+// 打ち間違いで取得し損ねただけで、①に手入力した行が消えないこと
+// ------------------------------------------------------------
+
+group('取得に失敗したとき');
+
+function typeFirstTwo(app) {
+  typeInto(app, 0, { id: '30001', title: '第1回のタイトル' });
+  typeInto(app, 1, { id: '30002' });
+}
+
+function keptInputs(app, count) {
+  const rows = app.state.rows;
+
+  return (
+    rows.length === count &&
+    rows[0].articleId === '30001' &&
+    rows[0].articleTitle === '第1回のタイトル' &&
+    rows[1].articleId === '30002' &&
+    app.buildPreviousHtmlFor(1).includes('/articles/-/30001')
+  );
+}
+
+const SERIES_NOT_FOUND = {
+  status: 'ok',
+  series: {
+    status: 'error',
+    message: 'カテゴリID「gr9999」のレコードが見つかりません',
+    data: null,
+  },
+  source: { status: 'error', message: '', candidates: [] },
+  sheet: { status: 'ok', message: '', rows: SHEET_ROWS },
+  warnings: [],
+};
+
+check('通信エラーでも①の回数と記事IDを残す', () => {
+  const app = setup({
+    episodeCount: 5,
+    fetch: () => Promise.reject(new Error('network down')),
+  });
+
+  typeFirstTwo(app);
+
+  return app.fetchReprintData('gr9999').then(() => {
+    return (
+      (keptInputs(app, 5) &&
+        app.state.series === null &&
+        app.el.sectionCommon.hidden === true &&
+        app.el.fetchStatus.textContent.includes('通信エラー')) ||
+      `→ ${app.state.rows.length}行 / ${app.el.fetchStatus.textContent}`
+    );
+  });
+});
+
+check('連載が見つからなくても①の入力を残し、参照元だけ外す', () => {
+  const app = setup({
+    episodeCount: 5,
+    fetch: () => Promise.resolve(jsonResponse(SERIES_NOT_FOUND)),
+  });
+
+  typeFirstTwo(app);
+
+  return app.fetchReprintData('gr9999').then(() => {
+    return (
+      (keptInputs(app, 5) &&
+        app.state.selectedSource === null &&
+        app.state.sourceCount === 0 &&
+        app.el.fetchStatus.textContent.includes('見つかりません')) ||
+      `→ ${app.state.rows.length}行 / ${app.el.fetchStatus.textContent}`
+    );
+  });
+});
+
+check('HTTPエラーでも①の入力を残す', () => {
+  const app = setup({
+    episodeCount: 5,
+    fetch: () =>
+      Promise.resolve(
+        jsonResponse(
+          { status: 'error', error: '書籍名かカテゴリコードを指定してください' },
+          400
+        )
+      ),
+  });
+
+  typeFirstTwo(app);
+
+  return app.fetchReprintData('gr9999').then(() => {
+    return keptInputs(app, 5) || `→ ${app.state.rows.length}行`;
+  });
+});
+
+check('失敗したあとは前の連載の公開予定日を残さない', () => {
+  const app = setup({
+    episodeCount: 3,
+    fetch: () => Promise.reject(new Error('network down')),
+  });
+
+  const before = app.state.rows[0].planned !== null;
+
+  return app.fetchReprintData('gr9999').then(() => {
+    return (
+      (before && app.state.rows.every((row) => row.planned === null)) ||
+      '→ 予定日が残っている'
+    );
+  });
+});
+
+check('失敗したあとも回数を変えて行を作り直せる', () => {
+  const app = setup({
+    episodeCount: 5,
+    fetch: () => Promise.reject(new Error('network down')),
+  });
+
+  typeFirstTwo(app);
+
+  return app.fetchReprintData('gr9999').then(() => {
+    app.setEpisodeCount(7);
+
+    return keptInputs(app, 7) || `→ ${app.state.rows.length}行`;
+  });
 });
 
 group('回数入力');
@@ -1179,6 +1460,35 @@ check('半角［］のピックアップ表記も外す', () => {
 
   return (
     app.getListTarget(true).bookTitle === '七つのショートしょーと' ||
+    `→ ${app.getListTarget(true).bookTitle}`
+  );
+});
+
+check('注目・人気以外のピックアップ表記も外す（［2025年話題作ピックアップ］など）', () => {
+  const app = setup();
+
+  const cases = [
+    ['あら、50歳独身いいかも！［2025年話題作ピックアップ］', 'あら、50歳独身いいかも！'],
+    ['夫 失格［イチオシ連載ピックアップ］', '夫 失格'],
+    ['幸せを呼ぶシンデレラおばさんと王子様［「バツ恋」人気御礼！武きき作品ピックアップ］', '幸せを呼ぶシンデレラおばさんと王子様'],
+    ['59才　失くした物と得た物[反響連載ピックアップ]', '59才　失くした物と得た物'],
+  ];
+
+  const got = cases.map(([title]) => {
+    app.state.series = { ...SERIES, bookTitle: title };
+    return app.getListTarget(true).bookTitle;
+  });
+
+  return got.every((title, i) => title === cases[i][1]) || `→ ${got.join(' / ')}`;
+});
+
+check('ピックアップ以外の角括弧（［文庫版］など）は外さない', () => {
+  const app = setup();
+
+  app.state.series = { ...SERIES, bookTitle: '泥の中で咲け［文庫改訂版］' };
+
+  return (
+    app.getListTarget(true).bookTitle === '泥の中で咲け［文庫改訂版］' ||
     `→ ${app.getListTarget(true).bookTitle}`
   );
 });
@@ -1937,6 +2247,190 @@ check('前回記事タブの回数入力は共通エリアと同じ値を見る'
     `→ ${app.state.episodeCount} / ${app.el.countInput.value}`
   );
 });
+
+// ============================================================
+// 12. API：参照元の照合（api/reprint-data.js をそのまま動かす）
+//
+// kintone は fetch を差し替えて真似る。書名は 2026-10-19 に
+// GLO連載情報（402）・記事データ（341）で実際に見つかった揺れをもとにしている。
+// 画面側のテストと違い fetch は1つしかないので、1件ずつ順に流す。
+// ============================================================
+
+group('API：参照元の照合');
+
+const API_URL = require('url').pathToFileURL(
+  path.join(__dirname, '..', 'api', 'reprint-data.js')
+).href;
+
+let apiQueue = Promise.resolve();
+
+// 402 のレコード1件と、341 の記事 [カテゴリコード, 書籍タイトル, 記事数] から
+// 参照元候補（カテゴリコード → 記事数）を返す
+function runSourceLookup(series, articles) {
+  const job = apiQueue.then(async () => {
+    const { default: handler } = await import(API_URL);
+
+    const v = (value) => ({ value });
+    const records = [];
+    let seq = 0;
+
+    for (const [code, title, count] of articles) {
+      for (let i = 1; i <= count; i++) {
+        seq++;
+        records.push({
+          $id: v(String(seq)),
+          カテゴリコード: v(code),
+          書籍タイトル: v(title),
+          連載回数: v(''),
+          '回数・数値': v(String(i)),
+          記事ID: v(String(10000 + seq)),
+          記事URL: v(''),
+          '記事URL・文字列': v(''),
+          記事タイトル: v(`第${i}回`),
+          公開日時: v(new Date(Date.UTC(2025, 0, 1) + seq * 86400000).toISOString()),
+          連載分類: v(''),
+        });
+      }
+    }
+
+    // kintone の like は記号と大文字小文字を区別しない部分一致なので、そのように真似る
+    const loose = (s) => String(s).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+    const savedFetch = globalThis.fetch;
+    const savedEnv = { ...process.env };
+
+    globalThis.fetch = async (url) => {
+      const u = new URL(String(url));
+      const query = u.searchParams.get('query') || '';
+
+      if (u.searchParams.get('app') === '402') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            records: [{
+              $id: v('1'),
+              カテゴリID: v(series.code),
+              書籍タイトル: v(series.title),
+              第1回配信日時: v('2026-10-20T12:00:00Z'),
+              制作No: v(''),
+            }],
+          }),
+        };
+      }
+
+      const m = query.match(/書籍タイトル like "((?:[^"\\]|\\.)*)"/);
+      const word = loose(m ? m[1].replace(/\\(.)/g, '$1') : '');
+      const offset = Number((query.match(/offset (\d+)/) || [])[1] || 0);
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          records: offset ? [] : records.filter((r) => loose(r.書籍タイトル.value).includes(word)),
+        }),
+      };
+    };
+
+    Object.assign(process.env, {
+      KINTONE_BASE_URL: 'https://example.cybozu.com',
+      KINTONE_API_TOKEN: 'x',
+      KINTONE_APP_ID: '402',
+      KINTONE_ARTICLE_API_TOKEN: 'x',
+    });
+    delete process.env.SHEET_GAS_URL;
+    delete process.env.SHEET_ID;
+
+    try {
+      const res = {
+        body: null,
+        setHeader() {},
+        status() { return this; },
+        json(body) { this.body = body; return this; },
+      };
+
+      await handler({ query: { code: series.code } }, res);
+
+      const found = {};
+      for (const c of res.body.source.candidates || []) {
+        found[c.categoryCode] = (c.articles || []).length;
+      }
+      return found;
+    } finally {
+      globalThis.fetch = savedFetch;
+      process.env = savedEnv;
+    }
+  });
+
+  apiQueue = job.catch(() => {});
+  return job;
+}
+
+const show = (found) => JSON.stringify(found);
+
+check('［2025年話題作ピックアップ］の過去連載も参照元に出す（gr2044 → gr1655）', () =>
+  runSourceLookup(
+    { code: 'gr2044', title: 'あら、50歳独身いいかも！［人気連載ピックアップ］' },
+    [
+      ['gr1367', 'あら、50歳独身いいかも！', 3],
+      ['gr1655', 'あら、50歳独身いいかも！［2025年話題作ピックアップ］', 3],
+    ]
+  ).then((found) => (found.gr1367 === 3 && found.gr1655 === 3) || `→ ${show(found)}`)
+);
+
+check('「～」が「?」に化けた過去連載も同じ書名とみなす（gr1128 → gr720）', () =>
+  runSourceLookup(
+    { code: 'gr1128', title: 'ザ・総選挙　～失われた三〇年の総決算～［注目記事ピックアップ］' },
+    [
+      ['gr1128', 'ザ・総選挙　?失われた三〇年の総決算?［注目記事ピックアップ］', 2],
+      ['gr720', 'ザ・総選挙　?失われた三〇年の総決算?', 4],
+    ]
+  ).then((found) => (found.gr720 === 4 && !('gr1128' in found)) || `→ ${show(found)}`)
+);
+
+check('大文字小文字が混ざった過去連載は全記事を1つにまとめる（gr1652 → gr1358）', () =>
+  runSourceLookup(
+    { code: 'gr1652', title: '東京フェイクLove?［2025年話題作ピックアップ］' },
+    [
+      ['gr1358', '東京フェイクLOVE?', 3],
+      ['gr1358', '東京フェイクLove?', 2],
+    ]
+  ).then((found) => found.gr1358 === 5 || `→ ${show(found)}`)
+);
+
+check('全角半角・読点・空白の違いも同じ書名とみなす', () =>
+  runSourceLookup(
+    { code: 'gr1862', title: '幸せを呼ぶシンデレラおばさんと王子様［イチオシ連載ピックアップ］' },
+    [
+      ['gr277', ' 幸せを呼ぶシンデレラおばさんと王子様', 2],
+      ['gr1620', '幸せを呼ぶ、シンデレラおばさんと王子様［「バツ恋」人気御礼！武きき作品ピックアップ］', 2],
+      ['gr9001', '幸せを呼ぶシンデレラおばさんと王子様', 1],
+    ]
+  ).then((found) => (found.gr277 === 2 && found.gr1620 === 2 && found.gr9001 === 1) || `→ ${show(found)}`)
+);
+
+check('ピックアップ以外の表記・続編・注記つきは別の書名のまま', () =>
+  runSourceLookup(
+    { code: 'gr1737', title: '59才　失くした物と得た物［反響連載ピックアップ］' },
+    [
+      ['gr911', '59才　失くした物と得た物', 2],
+      ['gr1070', '59才　失くした物と得た物[コンテスト特集]', 2],
+      ['gr1238', '59才　失くした物と得た物［文庫改訂版］', 2],
+      ['gr9002', '59才　失くした物と得た物2', 2],
+      ['1', '59才　失くした物と得た物※同作品が同日で被るため急遽公開停止', 1],
+    ]
+  ).then((found) => (show(found) === show({ gr911: 2 })) || `→ ${show(found)}`)
+);
+
+check('今回のカテゴリコード自身は参照元に出さない', () =>
+  runSourceLookup(
+    { code: 'gr1777', title: '夫 失格［イチオシ連載ピックアップ］' },
+    [
+      ['gr1777', '夫 失格［イチオシ連載ピックアップ］', 2],
+      ['gr297', '夫 失格', 3],
+    ]
+  ).then((found) => (show(found) === show({ gr297: 3 })) || `→ ${show(found)}`)
+);
 
 // ============================================================
 // 結果

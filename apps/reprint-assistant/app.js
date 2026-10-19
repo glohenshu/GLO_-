@@ -11,6 +11,9 @@
 
 const API_ENDPOINT = '/api/reprint-data';
 
+// 書籍名で探すときの最短の文字数。kintone の like は1文字だとほとんど拾わない
+const MIN_TITLE_QUERY_LENGTH = 2;
+
 // 再掲連載回数の範囲。
 // 1回だけの再掲（最終回のみ）もありうるので下限は1。
 // 上限は打ち間違いで数百行を作ってしまわないための歯止め
@@ -87,9 +90,12 @@ const state = {
 // ------------------------------------------------------------
 
 const el = {
-  codeInput: document.getElementById('code-input'),
+  searchInput: document.getElementById('search-input'),
   fetchBtn: document.getElementById('fetch-btn'),
   fetchStatus: document.getElementById('fetch-status'),
+
+  candidates: document.getElementById('candidates'),
+  candidatesList: document.getElementById('candidates-list'),
 
   warnings: document.getElementById('warnings'),
   warningsList: document.getElementById('warnings-list'),
@@ -109,7 +115,6 @@ const el = {
   sheetStatus: document.getElementById('sheet-status'),
   kintoneLink: document.getElementById('kintone-link'),
 
-  sectionTabs: document.getElementById('section-tabs'),
   tabButtons: Array.from(document.querySelectorAll('.tab')),
   panelPrev: document.getElementById('panel-prev'),
   panelBottom: document.getElementById('panel-bottom'),
@@ -142,32 +147,34 @@ const el = {
 // ------------------------------------------------------------
 
 el.fetchBtn.addEventListener('click', () => {
-  fetchReprintData();
+  runSearch();
 });
 
-// 入力できるのは半角数字だけ。
-// 全角数字と、貼り付けで付いてくる gr は黙って直し、
-// それ以外の文字が混ざっていたときだけ理由を出す
-el.codeInput.addEventListener('input', () => {
-  const raw = el.codeInput.value;
-  const digits = toCategoryDigits(raw);
-
-  if (digits !== raw) {
-    el.codeInput.value = digits;
-
-    if (hasUnusableCodeChars(raw)) {
-      setStatus('カテゴリコードは半角数字で入力してください（grは不要）', true);
-      return;
-    }
-  }
-
+// 数字だけならカテゴリコード、それ以外は書籍名の部分一致で検索する。
+// 打ち直しはじめたらエラー表示だけ消す
+el.searchInput.addEventListener('input', () => {
   if (el.fetchStatus.classList.contains('error')) setStatus('');
 });
 
-el.codeInput.addEventListener('keydown', (event) => {
+el.searchInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
-    fetchReprintData();
+    runSearch();
   }
+});
+
+// 候補は「押したらその連載を読み込む」だけ。押した後は一覧を閉じる
+el.candidatesList.addEventListener('click', (event) => {
+  const button = event.target.closest('button.candidate');
+
+  if (!button) return;
+
+  const code = button.dataset.code;
+
+  if (!code) return;
+
+  el.searchInput.value = toCategoryDigits(code) || code;
+
+  fetchReprintData(code);
 });
 
 el.sourceSelect.addEventListener('change', () => {
@@ -385,19 +392,28 @@ el.prevBody.addEventListener('input', (event) => {
   const digits = toCategoryDigits(params.get('code'));
 
   if (digits) {
-    el.codeInput.value = digits;
-    fetchReprintData();
+    el.searchInput.value = digits;
+    fetchReprintData(`gr${digits}`);
   }
 })();
 
 
 // ------------------------------------------------------------
-// API取得
+// 連載を探す
 // ------------------------------------------------------------
 
-// 画面に出しているのは数字だけ。APIへ渡すときに gr を付け直す
+// 入力が「カテゴリコードそのもの」かどうか。
+// 1974 / gr1974 / GR1974 / 全角の１９７４ を受ける。
+// それ以外（書籍名）は部分一致の検索に回す
+function isCodeQuery(value) {
+  return /^\s*(?:[gG][rR])?[0-9０-９]+\s*$/.test(String(value || ''));
+}
+
+// 検索欄がカテゴリコードのときだけ gr 付きの形を返す。書籍名なら空文字
 function getCategoryCode() {
-  const digits = toCategoryDigits(el.codeInput.value);
+  if (!isCodeQuery(el.searchInput.value)) return '';
+
+  const digits = toCategoryDigits(el.searchInput.value);
 
   return digits ? `gr${digits}` : '';
 }
@@ -412,18 +428,131 @@ function toCategoryDigits(value) {
     .replace(/[^0-9]/g, '');
 }
 
-// 直しようがない文字（英字・記号）が混ざっていたか。
-// 全角数字と gr は自動で直すので、ここでは咎めない
-function hasUnusableCodeChars(value) {
-  return /[^0-9０-９\s]/.test(String(value || '').replace(/^\s*[gG][rR]/, ''));
+// 検索ボタン・Enterの入口。
+// 数字だけならカテゴリコードで1件引き、それ以外は書籍名で候補を出す
+function runSearch() {
+  const text = String(el.searchInput.value || '').trim();
+
+  if (!text) {
+    setStatus('書籍名かカテゴリコードを入力してください', true);
+    el.searchInput.focus();
+    return;
+  }
+
+  if (isCodeQuery(text)) {
+    fetchReprintData(getCategoryCode());
+    return;
+  }
+
+  // kintone の like は1文字だとほとんど拾わない（「猫」で0件など）。
+  // 「一致する連載がありません」と出ると連載が無いと誤解するので、問い合わせる前に止める
+  if ([...text].length < MIN_TITLE_QUERY_LENGTH) {
+    setStatus('2文字以上で入力してください', true);
+    el.searchInput.focus();
+    return;
+  }
+
+  fetchCandidates(text);
 }
 
-async function fetchReprintData() {
-  const code = getCategoryCode();
+// 書籍名の部分一致で連載候補を出す。
+// ここでは連載をまだ決めないので、①〜③の入力や取得済みの連載には触らない
+async function fetchCandidates(text) {
+  el.fetchBtn.disabled = true;
+  setStatus('検索中…');
 
+  try {
+    const response = await fetch(
+      `${API_ENDPOINT}?q=${encodeURIComponent(text)}`,
+      { cache: 'no-store' }
+    );
+
+    const json = await response.json().catch(() => null);
+
+    if (!response.ok || !json) {
+      renderCandidates([]);
+      setStatus(`検索に失敗しました（HTTP ${response.status}）`, true);
+      return;
+    }
+
+    const candidates = json.candidates || {};
+    const items = Array.isArray(candidates.items) ? candidates.items : [];
+
+    renderCandidates(items);
+
+    if (!items.length) {
+      setStatus(
+        candidates.message || `「${text}」に一致する連載がありません`,
+        true
+      );
+      return;
+    }
+
+    setStatus(`${items.length}件見つかりました。連載を選んでください`);
+  } catch (e) {
+    renderCandidates([]);
+    setStatus(`通信エラー：${String(e.message || e)}`, true);
+  } finally {
+    el.fetchBtn.disabled = false;
+  }
+}
+
+function renderCandidates(items) {
+  el.candidatesList.textContent = '';
+
+  if (!items.length) {
+    el.candidates.hidden = true;
+    return;
+  }
+
+  items.forEach((item) => {
+    const li = document.createElement('li');
+    const button = document.createElement('button');
+
+    button.type = 'button';
+    button.className = 'candidate';
+    button.dataset.code = item.categoryCode || '';
+
+    const title = document.createElement('span');
+
+    title.className = 'candidate-title ellip';
+    title.textContent = item.bookTitle || '（書籍タイトルなし）';
+
+    // カテゴリコードと制作Noは同じ書籍名が複数あるときの決め手になる
+    const meta = document.createElement('span');
+
+    meta.className = 'candidate-meta mono';
+    meta.textContent = [
+      item.categoryCode || 'コード未登録',
+      item.productionNo ? `制作No ${item.productionNo}` : '',
+    ]
+      .filter(Boolean)
+      .join('　');
+
+    button.appendChild(title);
+    button.appendChild(meta);
+
+    // カテゴリコードが無いレコードは選んでも参照元を探せない
+    if (!item.categoryCode) {
+      button.disabled = true;
+      button.title = 'カテゴリIDが未登録です';
+    }
+
+    li.appendChild(button);
+    el.candidatesList.appendChild(li);
+  });
+
+  el.candidates.hidden = false;
+}
+
+// ------------------------------------------------------------
+// API取得
+// ------------------------------------------------------------
+
+async function fetchReprintData(code = getCategoryCode()) {
   if (!code) {
-    setStatus('カテゴリコードの数字を入力してください', true);
-    el.codeInput.focus();
+    setStatus('書籍名かカテゴリコードを入力してください', true);
+    el.searchInput.focus();
     return;
   }
 
@@ -443,7 +572,7 @@ async function fetchReprintData() {
         (json && (json.error || json.status)) ||
         `取得に失敗しました（HTTP ${response.status}）`;
 
-      resetView();
+      resetSeries();
       setStatus(message, true);
       return;
     }
@@ -462,7 +591,7 @@ async function fetchReprintData() {
     const series = json.series || {};
 
     if (series.status !== 'ok' || !series.data) {
-      resetView();
+      resetSeries();
       renderWarnings(json.warnings);
       setStatus(
         series.message || 'GLO連載情報を取得できませんでした',
@@ -472,6 +601,9 @@ async function fetchReprintData() {
     }
 
     state.series = series.data;
+
+    // 連載が決まったので候補一覧は閉じる
+    renderCandidates([]);
 
     // カテゴリコードが変わったので、前のレコードの入力は引き継がない
     state.rows = [];
@@ -500,13 +632,12 @@ async function fetchReprintData() {
     renderPrevTable();
     renderBottomTable();
 
-    el.sectionTabs.hidden = false;
     switchTab(state.activeTab);
 
     setStatus(`取得しました（${new Date().toLocaleTimeString('ja-JP')}）`);
 
   } catch (e) {
-    resetView();
+    resetSeries();
     setStatus(`通信エラー：${String(e.message || e)}`, true);
 
   } finally {
@@ -519,19 +650,16 @@ function setStatus(message, isError = false) {
   el.fetchStatus.classList.toggle('error', Boolean(isError));
 }
 
-function resetView() {
+// 取得に失敗したときは、連載と参照元の情報だけを捨てる。
+// ①の回数・記事ID・記事タイトルと③は連載なしでも使うので残し、タブも隠さない
+// （打ち間違えて取得し損ねただけで、手入力した行が消えないようにする）
+function resetSeries() {
   state.series = null;
   state.sourceCandidates = [];
   state.selectedSource = null;
   state.sourceError = '';
   state.sourceByEpisode = new Map();
   state.sourceCount = 0;
-  state.episodeCount = 0;
-  state.idStash.clear();
-  state.titleStash.clear();
-  state.copiedStash.clear();
-  state.rows = [];
-  state.copyButtons = [];
 
   renderCountControl();
 
@@ -539,12 +667,12 @@ function resetView() {
   el.warningsList.textContent = '';
 
   el.sectionCommon.hidden = true;
-  el.sectionTabs.hidden = true;
-
   el.sourceSelect.textContent = '';
-  el.prevBody.textContent = '';
-  el.bottomBody.textContent = '';
-  el.bulkStatus.textContent = '';
+
+  // 公開予定日は第1回配信日時から出していたので、行ごと作り直して外す
+  buildRows();
+  renderPrevTable();
+  renderBottomTable();
 }
 
 // ------------------------------------------------------------
@@ -2151,10 +2279,13 @@ function stripBookTitleBrackets(value) {
 // 公開済みの再掲（gr1896・gr1528）はいずれも通常回・最終回とも
 // 『プレナイト』と表示しており、ピックアップ表記は入れていない。
 // APIの normalizeSeriesTitle() と同じ規則を画面側でも使う。
+// ［2025年話題作ピックアップ］［イチオシ連載ピックアップ］なども含め、
+// 「［…ピックアップ］」の形ならすべて外す（種類を並べると新しい表記で漏れる）
+const PICKUP_LABEL_RE = /[［\[][^［］\[\]]*ピックアップ[］\]]/g;
+
 function stripPickupSuffix(value) {
   return String(value || '')
-    .replace(/［(?:注目|人気)連載ピックアップ］/g, '')
-    .replace(/\[(?:注目|人気)連載ピックアップ\]/g, '')
+    .replace(PICKUP_LABEL_RE, '')
     .trim();
 }
 

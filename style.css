@@ -107,47 +107,90 @@ h1 .ver {
   letter-spacing: .12em;
 }
 
-/* カテゴリコードは「gr」を画面に固定表示し、入力するのは数字だけ。
-   枠は外側の .code-field が持ち、入力欄自体の枠は消して一体に見せる。 */
-.code-field {
-  display: inline-flex;
-  align-items: stretch;
+/* 書籍名でもカテゴリコードでも打てる1つの検索欄。
+   書籍名が入るので等幅は当てない（--mono に日本語グリフが無い）。
+   後ろの input[type="text"] より強くするため .search-row から指定する */
+.search-row .search-input {
+  flex: 1 1 340px;
+  min-width: 0;
+  max-width: 460px;
+  padding: var(--s2) var(--s3);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
-  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-m);
+  font-family: inherit;
 }
 
-.code-field:focus-within {
+.search-row .search-input:focus {
   border-color: var(--accent);
   background: var(--panel);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-.code-prefix {
-  display: flex;
-  align-items: center;
-  padding: var(--s2) 2px var(--s2) var(--s3);
-  font-family: var(--mono);
-  font-size: var(--t-l);
+/* ---- 連載候補（書籍名で検索したとき） ---- */
+.candidates {
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.candidates-head {
+  font-size: var(--t-xs);
+  font-weight: 700;
   letter-spacing: .12em;
   color: var(--faint);
-  user-select: none;
+  margin-bottom: var(--s1);
 }
 
-#code-input {
-  width: 92px;
-  padding: var(--s2) var(--s3) var(--s2) 0;
-  border: 0;
-  border-radius: 0;
-  font-size: var(--t-l);
-  font-family: var(--mono);
-  letter-spacing: .12em;
+.candidates-list { list-style: none; }
+
+.candidates-list li + li { margin-top: var(--s1); }
+
+.candidate {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-#code-input:focus { outline: none; }
-.code-field:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.candidate:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.candidate:disabled { color: var(--faint); cursor: default; }
+
+.candidate-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--t-m);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「制作No」と日本語が混じるので等幅にはせず、数字の幅だけ揃える */
+.candidate-meta {
+  flex: 0 0 auto;
+  font-size: var(--t-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+  white-space: nowrap;
+}
 
 .fetch-status { font-size: var(--t-s); color: var(--sub); }
 .fetch-status.error { color: var(--warn); }
