@@ -87,7 +87,17 @@ export function narrowByDetails(matched, { subtitle, releaseDate }) {
 // 検索結果には似た書名の別の本が混ざるので、候補ページを開いて title01 の書名と突き合わせる
 async function findPageByTitle(title, details, fetchImpl) {
   const searchUrl = `${SITE}/?s=${encodeURIComponent(title)}`;
-  const candidates = searchResultLinks(await getText(searchUrl, fetchImpl));
+
+  // 出版実績サイトの検索は、結果が0件のとき HTTP 404 を返す（2026/10/29 確認。
+  // 刊行日前でページが未公開の7作品がすべてこれだった）。読めなかったのではなく「ページなし」
+  let searchHtml = '';
+  try {
+    searchHtml = await getText(searchUrl, fetchImpl);
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
+
+  const candidates = searchResultLinks(searchHtml);
 
   if (!candidates.length) {
     return { status: 'notfound', message: '出版実績ページがまだありません（サイト内検索で見つかりません）' };

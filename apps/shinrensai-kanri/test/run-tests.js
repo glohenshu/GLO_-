@@ -228,6 +228,13 @@ function fakeFetch(routes) {
   }
 
   {
+    // 実物のサイトは、検索結果が0件のとき 404 を返す
+    const f = fakeFetch({ 'https://www.gentosha-book.com/?s=': { status: 404, body: '<title>ページが見つかりません</title>' } });
+    const r = await lookupBook({ title: '兵機人類', url: '' }, { fetchImpl: f });
+    eq('検索が 404（結果0件）なら、エラーではなく「ページなし」', [r.status, r.message.includes('まだありません')], ['notfound', true]);
+  }
+
+  {
     const f = fakeFetch({
       'https://www.gentosha-book.com/?s=': `<a href="${OLD_URL}">b</a>`,
       [OLD_URL]: pubPage({ title: '別の本' }),
