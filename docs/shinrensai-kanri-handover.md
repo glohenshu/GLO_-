@@ -1,4 +1,6 @@
-# 新連載管理アシスタント 引継ぎメモ（2026/10/19 版）
+# 夜明け入力サポートツール 引継ぎメモ（2026/10/19 版）
+
+（2026/10/29 に「新連載管理アシスタント」から改名。フォルダ名・Vercel のプロジェクト名・URL は変えていない）
 
 置き場所：`apps/shinrensai-kanri/`
 Vercel Project：`glo-shinrensai-kanri`（team glo11、Root Directory は `apps/shinrensai-kanri`）
