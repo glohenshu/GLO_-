@@ -542,6 +542,16 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .field-list .field:hover button.copy { border-color: var(--line); color: var(--sub); }
 
+/* Amazon・楽天の照合結果。空欄の警告と同じく、触れていなくても出したままにする */
+.field-list .field .store-note {
+  font-size: var(--t-xs);
+  color: var(--warn);
+  padding: var(--s1) var(--s3) 0;
+  word-break: break-all;
+}
+
+.field-list .field .store-note a { color: inherit; }
+
 /* ============================================================
    ① 著者カード
    ============================================================ */

@@ -1,5 +1,5 @@
 // 新連載作成アシスタント Ver.1
-// 情報取得API：kintone / 出版実績ページ / Googleスプレッドシートを一括取得する。
+// 情報取得API：kintone / 出版実績ページ / Googleスプレッドシート（記事下リンク・夜明け）を一括取得する。
 // 一部の取得に失敗しても全体を停止せず、ソースごとに status を返す（仕様書 12章）。
 
 export default async function handler(req, res) {
@@ -39,6 +39,11 @@ export default async function handler(req, res) {
       status: 'error',
       message: '',
       rows: null,
+    },
+    yoake: {
+      status: 'error',
+      message: '',
+      data: null,
     },
     links: {
       kintone: '',
@@ -239,7 +244,79 @@ export default async function handler(req, res) {
   }
 
   // ============================================================
-  // 4. 確認用リンク
+  // 4. 夜明け（新連載管理用シート）の Amazon・楽天
+  //
+  // 「情報入力用」タブのX列（Amazon）・Y列（楽天）を、GAS（gas/yoake-links.gs）経由で読む。
+  // 出版実績URLはkintoneのものを使うので、夜明けからは読まない。
+  //
+  // 夜明けのリンクは人が貼ったものなので、出版実績ページと突き合わせてから出す
+  // （checkStoreLinks）。出版実績ページを先に取ってあるのはこのため。
+  // ============================================================
+
+  try {
+    const yoakeUrl =
+      process.env.YOAKE_GAS_URL;
+
+    if (!yoakeUrl) {
+      throw new Error(
+        'YOAKE_GAS_URL が未設定です'
+      );
+    }
+
+    const u = new URL(yoakeUrl);
+    u.searchParams.set('code', code);
+
+    const r = await fetch(u, {
+      redirect: 'follow',
+    });
+
+    if (!r.ok) {
+      throw new Error(
+        `GAS取得エラー (${r.status})`
+      );
+    }
+
+    const json = await r.json();
+
+    if (json.error) {
+      throw new Error(json.error);
+    }
+
+    if (!Array.isArray(json.rows)) {
+      throw new Error(
+        'GASの応答形式が不正です'
+      );
+    }
+
+    if (json.rows.length === 0) {
+      throw new Error(
+        `夜明けの「情報入力用」に${code}の行がありません`
+      );
+    }
+
+    const row = json.rows[0];
+
+    result.yoake = {
+      status: 'ok',
+      message:
+        json.rows.length > 1
+          ? `夜明けに${code}の行が${json.rows.length}つあります。上の行を使っています`
+          : '',
+      data: checkStoreLinks(
+        row,
+        result.publication.status === 'ok'
+          ? result.publication.data.storeLinks
+          : null
+      ),
+    };
+
+  } catch (e) {
+    result.yoake.message =
+      String(e.message || e);
+  }
+
+  // ============================================================
+  // 5. 確認用リンク
   // ============================================================
 
   // 「毎月の記事下リンク」
@@ -750,7 +827,162 @@ function parsePublicationPage(html) {
     catchCopy,
     title: titleBlock.title,
     subtitle: titleBlock.subtitle,
+    storeLinks: extractStoreLinks(html),
     rawText:
       text.slice(0, 4000),
   };
+}
+
+
+// ============================================================
+// 購入リンク（夜明けのリンクの照合に使う）
+//
+// ページには紙の本の欄（isbnlist01）と電子書籍の欄（isbnlist02）がある。
+//   紙の本     … Amazon は `../../asin.php?isbn={ISBN13}`、楽天は楽天の検索結果へのリンク
+//   電子のみ   … 紙の本の欄は isbn が空。電子書籍の欄に amazon.co.jp/dp/… と
+//                books.rakuten.co.jp/rk/… が直接載っている
+// 同じリンクがHTMLコメントの中にも残っているページがあるので、コメントは先に落とす。
+//
+// apps/shinrensai-kanri/api/_lib/publication.js の extractStoreLinks と同じ。
+// 片方を直したら、もう片方も直す
+// ============================================================
+
+function extractStoreLinks(html) {
+  const live = String(html || '').replace(/<!--[\s\S]*?-->/g, '');
+  const hrefs = [...live.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'));
+
+  const isbnHref = hrefs.find((h) => /asin\.php\?isbn=97[89]\d{10}\b/.test(h));
+  const amazonDp = hrefs.find((h) => /^https?:\/\/www\.amazon\.co\.jp\/dp\/[0-9A-Z]{10}/.test(h)) || '';
+  const rakutenRk = hrefs.find((h) => /^https?:\/\/books\.rakuten\.co\.jp\/rk\/[0-9a-z]+/.test(h)) || '';
+
+  return {
+    isbn13: isbnHref ? isbnHref.match(/97[89]\d{10}/)[0] : '',
+    amazonEbook: amazonDp,
+    rakutenEbook: rakutenRk,
+  };
+}
+
+
+// ISBN-13（978始まり）→ ISBN-10。Amazon の紙の本のURLは ISBN-10 で作る
+function isbn13to10(isbn13) {
+  const s = String(isbn13 || '').replace(/-/g, '');
+  if (!/^978\d{10}$/.test(s)) return '';
+
+  const core = s.slice(3, 12);
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += (10 - i) * Number(core[i]);
+  const check = (11 - (sum % 11)) % 11;
+
+  return core + (check === 10 ? 'X' : String(check));
+}
+
+
+// `exec/obidos/ASIN/4344700287/` と `dp/B0HMW7JB16/` のどちらからでも、10桁の商品コードを取る
+function amazonAsin(url) {
+  const m = String(url || '').match(
+    /amazon\.co\.jp\/(?:exec\/obidos\/ASIN|dp|gp\/product)\/([0-9A-Z]{10})(?![0-9A-Z])/i
+  );
+  return m ? m[1].toUpperCase() : '';
+}
+
+
+// `rb/18835451/`（紙の本）・`rk/d3264a…/`（電子書籍）を、種類つきで取る
+function rakutenItem(url) {
+  const m = String(url || '').match(
+    /books\.rakuten\.co\.jp\/(rb|rk)\/([0-9a-z]+)/i
+  );
+  return m ? { kind: m[1].toLowerCase(), id: m[2].toLowerCase() } : null;
+}
+
+
+// ============================================================
+// 夜明けのリンクを出版実績ページと突き合わせる
+//
+// 返す check は4つ。
+//   ok         … ページと一致した
+//   mismatch   … ページと食い違う。画面ではURLを入れずに手入力へ回す
+//   unchecked  … ページからは照合できない。画面で「開いて確かめる」を出す
+//   empty      … 夜明けのセルが空
+//
+// 楽天の紙の本（rb/…）は、出版実績ページに楽天の検索結果へのリンクしか無く、
+// 商品番号が載っていないので照合できない（unchecked）。
+// 楽天の検索結果を読みに行けば照合できるが、アメリカのサーバーからだと
+// 楽天が違う中身を返すことがあるため、やらない（2026/10/30 判断：目で確かめる）。
+// ============================================================
+
+function checkStoreLinks(row, links) {
+  return {
+    amazon: checkAmazon(String(row.amazon || '').trim(), links),
+    rakuten: checkRakuten(String(row.rakuten || '').trim(), links),
+  };
+}
+
+
+function checkAmazon(url, links) {
+  if (!url) {
+    return { url, check: 'empty', note: '' };
+  }
+
+  const asin = amazonAsin(url);
+
+  if (!asin) {
+    return { url, check: 'mismatch', note: 'AmazonのURLの形ではありません' };
+  }
+
+  if (!links) {
+    return { url, check: 'unchecked', note: '出版実績ページが取れないため照合できません' };
+  }
+
+  // 紙の本はISBN-10、電子のみは dp/B0… が正しい商品コード。
+  // 紙と電子の両方がある作品では、どちらに合っていても同じ本なので通す
+  const expected = [
+    isbn13to10(links.isbn13),
+    amazonAsin(links.amazonEbook),
+  ].filter(Boolean);
+
+  if (expected.length === 0) {
+    return { url, check: 'unchecked', note: '出版実績ページにAmazonのリンクが無いため照合できません' };
+  }
+
+  if (expected.includes(asin)) {
+    return { url, check: 'ok', note: '' };
+  }
+
+  return { url, check: 'mismatch', note: '出版実績ページの本と一致しません' };
+}
+
+
+function checkRakuten(url, links) {
+  if (!url) {
+    return { url, check: 'empty', note: '' };
+  }
+
+  const item = rakutenItem(url);
+
+  if (!item) {
+    return { url, check: 'mismatch', note: '楽天ブックスのURLの形ではありません' };
+  }
+
+  if (!links) {
+    return { url, check: 'unchecked', note: '出版実績ページが取れないため照合できません' };
+  }
+
+  const ebook = rakutenItem(links.rakutenEbook);
+
+  if (item.kind === 'rk') {
+    if (!ebook) {
+      return { url, check: 'unchecked', note: '出版実績ページに楽天の電子書籍のリンクが無いため照合できません' };
+    }
+
+    return ebook.id === item.id
+      ? { url, check: 'ok', note: '' }
+      : { url, check: 'mismatch', note: '出版実績ページの本と一致しません' };
+  }
+
+  // 紙の本（rb/…）。電子のみの作品に紙の本のリンクが入っていたら誤り
+  if (!links.isbn13 && ebook) {
+    return { url, check: 'mismatch', note: '電子のみの作品に紙の本のリンクが入っています' };
+  }
+
+  return { url, check: 'unchecked', note: '楽天の紙の本は出版実績ページでは照合できません' };
 }

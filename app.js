@@ -4,6 +4,8 @@ const state = {
   record: null,      // kintone
   pub: null,         // 出版実績
   sheetRows: null,   // [B, C] の配列
+  yoake: null,       // 夜明けの Amazon・楽天（{ url, check, note } ×2）
+  yoakeMessage: '',  // 夜明けを取れなかった理由
   categoryCode: '',  // 取得した作品のカテゴリID（gr1966）。currentCategoryCode() で読む
   authors: [],       // { name, kana, intro, sns: {x,instagram,facebook}, links: [] }
 };
@@ -293,6 +295,8 @@ async function fetchInfo(code) {
     state.record = data.kintone.status === 'ok' ? data.kintone.data : null;
     state.pub = data.publication.status === 'ok' ? data.publication.data : null;
     state.sheetRows = data.sheet.status === 'ok' ? data.sheet.rows : null;
+    state.yoake = data.yoake?.status === 'ok' ? data.yoake.data : null;
+    state.yoakeMessage = data.yoake?.message || '';
 
     // 別の作品を取得したら、コピー済みの印は消す
     document
@@ -386,6 +390,11 @@ function renderBasicInfo(data) {
   };
   setBadge('info-pub-status', data.publication.status === 'ok', data.publication.message);
   setBadge('info-sheet-status', data.sheet.status === 'ok', data.sheet.message);
+  // 行が2つ以上あったときの注意は、取れていても出す
+  setBadge('info-yoake-status', data.yoake?.status === 'ok', data.yoake?.message);
+  if (data.yoake?.status === 'ok' && data.yoake.message) {
+    $('info-yoake-status').textContent = `取得済み（${data.yoake.message}）`;
+  }
 
   // 解析デバッグ：出版実績ページから抽出したテキスト。
   // 通常の登録作業では使わないため、URLに ?debug=1 を付けたときだけ表示する。
@@ -695,6 +704,10 @@ const BOOK_FIELD_DEFS = [
   { key: 'format', label: '判型', calc: () => splitFormat().format },
   { key: 'pages', label: 'ページ数', calc: () => splitFormat().pages },
   { key: 'release', label: '発売日', calc: () => releaseDate() },
+  // 出版実績URLはkintone。Amazon・楽天は夜明けのX・Y列を、出版実績ページと照合してから出す
+  { key: 'pubUrl', label: '出版実績URL', emptyNote: 'kintoneに出版実績URLがありません', calc: () => state.record?.pubUrl || '' },
+  { key: 'amazon', label: 'Amazon', store: 'amazon', column: 'X' },
+  { key: 'rakuten', label: '楽天', store: 'rakuten', column: 'Y' },
   { key: 'publish', label: '公開日時', calc: () => fmtDelivery(state.record?.firstDelivery) },
 ];
 
@@ -735,6 +748,12 @@ function renderBookFields() {
       <div><button class="copy" data-copy-target="${inputId}">コピー</button></div>
     `;
     wrap.appendChild(row);
+
+    if (def.store) {
+      renderStoreField(def, row, $(inputId));
+      return;
+    }
+
     $(inputId).value = def.calc() || '';
 
     // 空欄の理由を分ける。
@@ -748,6 +767,52 @@ function renderBookFields() {
         : '取得できませんでした';
     }
   });
+}
+
+// Amazon・楽天の欄。夜明けのリンクは、照合の結果によって出し方を変える。
+//   ok        … そのまま入れる
+//   unchecked … 入れたうえで、欄の下に「開いて確かめてください」とリンクを出す
+//   mismatch  … 誤ったリンクを貼らないよう欄は空にし、欄の下に夜明けの値を出す
+//   empty     … 欄を空にし、夜明けのセルが空だと出す
+function renderStoreField(def, row, input) {
+  const item = state.yoake?.[def.store];
+
+  if (!item) {
+    input.placeholder = `夜明けから取得できませんでした（${state.yoakeMessage || '原因不明'}）`;
+    return;
+  }
+
+  if (item.check === 'empty') {
+    input.placeholder = `夜明けの${def.column}列が空です`;
+    return;
+  }
+
+  if (item.check === 'mismatch') {
+    input.placeholder = `夜明けのリンクが誤っています（${item.note}）。手入力してください`;
+    addStoreNote(row, '夜明けの値：', item.url);
+    return;
+  }
+
+  input.value = item.url;
+
+  if (item.check === 'unchecked') {
+    addStoreNote(row, `${item.note}。開いて確かめてください：`, item.url);
+  }
+}
+
+function addStoreNote(row, text, url) {
+  const note = document.createElement('p');
+  note.className = 'store-note';
+  note.append(text);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = url;
+  note.append(a);
+
+  row.children[1].appendChild(note);
 }
 
 // ============================================================

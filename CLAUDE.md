@@ -15,7 +15,7 @@ GLOの新規連載登録時に必要な情報を、カテゴリコード（例�
 
 ## 環境変数（Vercel）
 
-`KINTONE_BASE_URL` / `KINTONE_API_TOKEN` / `KINTONE_APP_ID` / `SHEET_GAS_URL` / `ARTICLE_SHEET_URL`（完全URLでもIDのみでも可） / `MEDIAWEAVER_URL`
+`KINTONE_BASE_URL` / `KINTONE_API_TOKEN` / `KINTONE_APP_ID` / `SHEET_GAS_URL` / `YOAKE_GAS_URL`（夜明けのAmazon・楽天） / `ARTICLE_SHEET_URL`（完全URLでもIDのみでも可） / `MEDIAWEAVER_URL`
 
 ※ GASを使わない場合のみ `SHEET_ID` / `GOOGLE_API_KEY` / `SHEET_NAME`。
 
@@ -41,7 +41,8 @@ GLOの新規連載登録時に必要な情報を、カテゴリコード（例�
 
 ## 壊してはいけない実装済みロジック
 
-- API処理順：kintone → 出版実績 → 記事下リンク → 確認用リンク生成 → JSON返却（途中で早期returnしない）
+- API処理順：kintone → 出版実績 → 記事下リンク → 夜明け → 確認用リンク生成 → JSON返却（途中で早期returnしない）
+- **②書籍登録のAmazon・楽天は夜明けのX・Y列**（`gas/yoake-links.gs` 経由、`YOAKE_GAS_URL`）。出版実績URLはkintoneから取る。夜明けのリンクは `checkStoreLinks()` で出版実績ページと照合し、食い違えば欄を空にして手入力へ回す。**楽天の紙の本は照合できないので、欄の下に「開いて確かめてください」を出す**（楽天を読みに行かない。2026/10/30 判断）。詳細は `docs/handover.md` §3
 - 1ソースの取得失敗で他を止めない設計。失敗項目は「取得できませんでした」表示＋手入力補完
 - 著者名行の判定条件：`名前（かな）`形式／先頭が数字でない／括弧内がかな・カナ等／異常に長くない
 - **段落の切れ目は `compactLines()` で判定する**。出版実績ページ由来のテキストは行と行のあいだに空行が1つ入るため、空行1つは落とし、空行2つ以上のときだけ段落として空行を1つ残す。②書籍登録の紹介文と①著者登録の著者紹介の両方がこれを通る。**空行をすべて捨てるとページ上の段落分けまで消える**

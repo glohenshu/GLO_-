@@ -99,5 +99,6 @@ ALLOWED_EMAILS=自分のアドレス SHEET_ID=シートのコピーのID node ap
 ## 7. 気をつけること
 
 - `api/_lib/publication.js` の `htmlToText` / `cutAtStops` / `extractTitleBlock` は、ルートの `api/fetch-info.js` から移したもの。片方を直したら、もう片方も直す
+- 逆に `extractStoreLinks` / `isbn13to10` は、ルートの `api/fetch-info.js` にも写してある（夜明けのAmazon・楽天の照合用、2026/10/30）。こちらも片方を直したら、もう片方も直す
 - 内容紹介の改行の扱いは、新連載作成アシスタント（段落に空行を残す）とは**わざと違う**。シートの書き方に合わせている
 - ルートの新連載作成アシスタントのURLの下で `apps/` 配下のファイルが読める（既存の2アプリも同じ）。秘密の値はコードに無いので漏れるものは無いが、気になるなら別途止める
