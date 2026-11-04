@@ -901,7 +901,7 @@ function rakutenItem(url) {
 // 返す check は4つ。
 //   ok         … ページと一致した
 //   mismatch   … ページと食い違う。画面ではURLを入れずに手入力へ回す
-//   unchecked  … ページからは照合できない。画面で「開いて確かめる」を出す
+//   unchecked  … ページからは照合できない。note があれば画面で「開いて確かめる」を出す
 //   empty      … 夜明けのセルが空
 //
 // 楽天の紙の本（rb/…）は、出版実績ページに楽天の検索結果へのリンクしか無く、
@@ -984,5 +984,7 @@ function checkRakuten(url, links) {
     return { url, check: 'mismatch', note: '電子のみの作品に紙の本のリンクが入っています' };
   }
 
-  return { url, check: 'unchecked', note: '楽天の紙の本は出版実績ページでは照合できません' };
+  // ふだんの紙の本はすべてここに来るので、注意は出さない（2026/11/04 判断）。
+  // 確かめるときは欄にかざして小窓で見る
+  return { url, check: 'unchecked', note: '' };
 }

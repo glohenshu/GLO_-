@@ -775,7 +775,8 @@ function renderBookFields() {
 
 // Amazon・楽天の欄。夜明けのリンクは、照合の結果によって出し方を変える。
 //   ok        … そのまま入れる
-//   unchecked … 入れたうえで、欄の下に「開いて確かめてください」とリンクを出す
+//   unchecked … 入れる。理由（note）があれば、欄の下に「開いて確かめてください」とリンクを出す
+//               （楽天の紙の本は毎回ここに来るので note が空。かざして小窓で確かめる）
 //   mismatch  … 誤ったリンクを貼らないよう欄は空にし、欄の下に夜明けの値を出す
 //   empty     … 欄を空にし、夜明けのセルが空だと出す
 function renderStoreField(def, row, input) {
@@ -799,7 +800,7 @@ function renderStoreField(def, row, input) {
 
   input.value = item.url;
 
-  if (item.check === 'unchecked') {
+  if (item.check === 'unchecked' && item.note) {
     addStoreNote(row, `${item.note}。開いて確かめてください：`, item.url);
   }
 }
