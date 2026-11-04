@@ -320,6 +320,7 @@ async function fetchInfo(code) {
 }
 
 function renderAll(data) {
+  clearLinkPreviewFrames();
   renderPublishStart();
   renderBasicInfo(data);
   renderQuickLinks(data);
@@ -703,11 +704,11 @@ const BOOK_FIELD_DEFS = [
   { key: 'isbn', label: 'ISBN', calc: () => state.pub?.isbn || '' },
   { key: 'format', label: '判型', calc: () => splitFormat().format },
   { key: 'pages', label: 'ページ数', calc: () => splitFormat().pages },
-  { key: 'release', label: '発売日', calc: () => releaseDate() },
   // 出版実績URLはkintone。Amazon・楽天は夜明けのX・Y列を、出版実績ページと照合してから出す
-  { key: 'pubUrl', label: '出版実績URL', emptyNote: 'kintoneに出版実績URLがありません', calc: () => state.record?.pubUrl || '' },
-  { key: 'amazon', label: 'Amazon', store: 'amazon', column: 'X' },
-  { key: 'rakuten', label: '楽天', store: 'rakuten', column: 'Y' },
+  { key: 'amazon', label: 'Amazon', store: 'amazon', column: 'X', preview: true },
+  { key: 'rakuten', label: '楽天ブックス', store: 'rakuten', column: 'Y', preview: true },
+  { key: 'pubUrl', label: '出版実績URL', emptyNote: 'kintoneに出版実績URLがありません', preview: true, calc: () => state.record?.pubUrl || '' },
+  { key: 'release', label: '発売日', calc: () => releaseDate() },
   { key: 'publish', label: '公開日時', calc: () => fmtDelivery(state.record?.firstDelivery) },
 ];
 
@@ -735,6 +736,7 @@ function releaseDate() {
 
 function renderBookFields() {
   const wrap = $('book-fields');
+  hideLinkPreview();
   wrap.innerHTML = '';
   BOOK_FIELD_DEFS.forEach((def) => {
     const row = document.createElement('div');
@@ -748,6 +750,8 @@ function renderBookFields() {
       <div><button class="copy" data-copy-target="${inputId}">コピー</button></div>
     `;
     wrap.appendChild(row);
+
+    if (def.preview) attachLinkPreview(row.children[1], $(inputId));
 
     if (def.store) {
       renderStoreField(def, row, $(inputId));
@@ -805,15 +809,146 @@ function addStoreNote(row, text, url) {
   note.className = 'store-note';
   note.append(text);
 
-  const a = document.createElement('a');
-  a.href = url;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  a.textContent = url;
-  note.append(a);
+  // シートの値なので、http(s) のときだけリンクにする
+  if (isWebUrl(url)) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = url;
+    note.append(a);
+  } else {
+    note.append(url);
+  }
 
   row.children[1].appendChild(note);
 }
+
+function isWebUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+// ------------------------------------------------------------
+// リンク先の小窓（Amazon・楽天ブックス・出版実績URL）
+//
+// 欄にマウスをかざすと、リンク先のページを小窓で開く。小窓の中はスクロールできる。
+// 通りがかりで開かないよう少し待ち、小窓へマウスを移せるよう閉じるのも少し待つ。
+//
+// Amazonは他のサイトの中に表示させないので、ページは出さず別タブで開くリンクだけ出す。
+// 楽天は表示まで時間がかかる（2026/11/04 開発用ブラウザで10〜20秒）。読み直さないよう
+// URLごとに iframe を残し、別の作品を取得したら捨てる。
+// sandbox に allow-top-navigation を入れないのは、リンク先がこの画面ごと移動させないため。
+// ------------------------------------------------------------
+
+const LINK_PREVIEW_OPEN_MS = 300;
+const LINK_PREVIEW_CLOSE_MS = 200;
+const LINK_PREVIEW_GAP = 8;
+
+const linkPreview = { el: null, frames: new Map(), openTimer: 0, closeTimer: 0 };
+
+function linkPreviewEl() {
+  if (linkPreview.el) return linkPreview.el;
+
+  const el = document.createElement('div');
+  el.className = 'link-preview';
+  el.hidden = true;
+  el.innerHTML = `
+    <div class="link-preview-head"><a target="_blank" rel="noopener"></a></div>
+    <p class="link-preview-note" hidden>Amazonのページはここに表示できません。上のリンクから別タブで開いてください。</p>
+    <div class="link-preview-frame"><p class="link-preview-loading">読み込み中…（楽天は時間がかかることがあります）</p></div>
+  `;
+  el.addEventListener('mouseenter', () => clearTimeout(linkPreview.closeTimer));
+  el.addEventListener('mouseleave', scheduleLinkPreviewClose);
+  document.body.appendChild(el);
+
+  linkPreview.el = el;
+  return el;
+}
+
+function attachLinkPreview(cell, input) {
+  cell.addEventListener('mouseenter', () => {
+    clearTimeout(linkPreview.closeTimer);
+    clearTimeout(linkPreview.openTimer);
+
+    // 手で書き換えた値にも追従するよう、開くときに欄を読む
+    linkPreview.openTimer = setTimeout(() => {
+      const url = input.value.trim();
+      if (isWebUrl(url)) showLinkPreview(url, cell);
+    }, LINK_PREVIEW_OPEN_MS);
+  });
+
+  cell.addEventListener('mouseleave', () => {
+    clearTimeout(linkPreview.openTimer);
+    scheduleLinkPreviewClose();
+  });
+}
+
+function scheduleLinkPreviewClose() {
+  clearTimeout(linkPreview.closeTimer);
+  linkPreview.closeTimer = setTimeout(hideLinkPreview, LINK_PREVIEW_CLOSE_MS);
+}
+
+function showLinkPreview(url, cell) {
+  const el = linkPreviewEl();
+  const isAmazon = /^https?:\/\/([a-z0-9-]+\.)*amazon\.co\.jp\//i.test(url);
+  const link = el.querySelector('.link-preview-head a');
+  const frameWrap = el.querySelector('.link-preview-frame');
+
+  link.href = url;
+  link.textContent = url;
+  el.querySelector('.link-preview-note').hidden = !isAmazon;
+  frameWrap.hidden = isAmazon;
+
+  if (!isAmazon) {
+    linkPreview.frames.forEach((frame) => { frame.hidden = true; });
+
+    let frame = linkPreview.frames.get(url);
+
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.title = 'リンク先';
+      frame.referrerPolicy = 'no-referrer';
+      frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      frame.addEventListener('load', () => frame.classList.add('loaded'));
+      frame.src = url;
+      frameWrap.appendChild(frame);
+      linkPreview.frames.set(url, frame);
+    }
+
+    frame.hidden = false;
+  }
+
+  el.hidden = false;
+
+  // 欄を隠さないよう、広く空いているほう（上か下）に出す
+  const rect = cell.getBoundingClientRect();
+  const height = el.offsetHeight;
+  const above = rect.top - LINK_PREVIEW_GAP;
+  const below = window.innerHeight - rect.bottom - LINK_PREVIEW_GAP;
+  const top = below >= height || below >= above
+    ? rect.bottom + LINK_PREVIEW_GAP
+    : rect.top - LINK_PREVIEW_GAP - height;
+
+  el.style.left = `${Math.max(LINK_PREVIEW_GAP, rect.left)}px`;
+  el.style.top = `${Math.max(LINK_PREVIEW_GAP, top)}px`;
+}
+
+function hideLinkPreview() {
+  clearTimeout(linkPreview.openTimer);
+  clearTimeout(linkPreview.closeTimer);
+  if (linkPreview.el) linkPreview.el.hidden = true;
+}
+
+function clearLinkPreviewFrames() {
+  linkPreview.frames.forEach((frame) => frame.remove());
+  linkPreview.frames.clear();
+}
+
+// 小窓は画面に固定して出すので、ページが動いたら欄とずれないよう閉じる
+window.addEventListener('scroll', hideLinkPreview, { passive: true });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') hideLinkPreview();
+});
 
 // ============================================================
 // ③ カテゴリ

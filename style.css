@@ -552,6 +552,65 @@ button.ghost:hover { border-color: var(--sub); color: var(--ink); }
 
 .field-list .field .store-note a { color: inherit; }
 
+/* リンク先の小窓。ページはPC幅（960×720）で読み込み、半分に縮めて見せる */
+.link-preview {
+  position: fixed;
+  z-index: 40;
+  width: 480px;
+  max-width: calc(100vw - var(--s4));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.link-preview[hidden],
+.link-preview [hidden] { display: none; }
+
+.link-preview-head {
+  padding: var(--s2) var(--s3);
+  font-size: var(--t-xs);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-preview-note {
+  padding: var(--s3);
+  font-size: var(--t-s);
+  color: var(--sub);
+}
+
+.link-preview-frame {
+  position: relative;
+  width: 480px;
+  height: 360px;
+  overflow: hidden;
+}
+
+/* ページが描かれるまでは iframe が透明なので、この文が見える */
+.link-preview-loading {
+  padding: var(--s3);
+  font-size: var(--t-s);
+  color: var(--faint);
+}
+
+.link-preview-frame iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 960px;
+  height: 720px;
+  border: 0;
+  transform: scale(.5);
+  transform-origin: 0 0;
+}
+
+/* 背景が透明なページでも、読み込み後に下の文が透けないようにする */
+.link-preview-frame iframe.loaded { background: var(--panel); }
+
 /* ============================================================
    ① 著者カード
    ============================================================ */
