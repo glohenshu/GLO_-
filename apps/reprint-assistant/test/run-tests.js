@@ -168,7 +168,7 @@ const APP_SOURCE =
   getCategoryCode, toCategoryDigits, isCodeQuery, runSearch, renderCandidates,
   fetchReprintData, resetSeries,
   buildRows, renderPrevTable, renderBottomTable, updatePrevRow,
-  applyBulkIds, clearArticleIds,
+  applyBulkValues, clearArticleIds, clearArticleTitles,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
   buildNextArticleHtml, buildArticleBottomHtml, buildFinalEpisodeHtml,
   removeDroppedParagraphs, getListTarget, sheetBlockReason, buildNextArticleTemplateHtml,
@@ -831,7 +831,7 @@ check('空行・前後の空白・CRLFが混ざっても各回へ順に入る', 
   const app = setup();
 
   app.el.bulkInput.value = '  30001  \r\n\r\n30002\n\n  30003\r30004  ';
-  app.applyBulkIds();
+  app.applyBulkValues();
 
   const ids = app.state.rows.slice(0, 4).map((row) => row.articleId);
 
@@ -844,7 +844,7 @@ check('回数を超えた分は退避され、回数を増やすと戻る', () =
   const app = setup({ episodeCount: 3 });
 
   app.el.bulkInput.value = '30001\n30002\n30003\n30004\n30005';
-  app.applyBulkIds();
+  app.applyBulkValues();
 
   const before = app.state.rows.length;
 
@@ -862,7 +862,7 @@ check('超過したことがステータスに出る', () => {
   const app = setup({ episodeCount: 2 });
 
   app.el.bulkInput.value = '30001\n30002\n30003';
-  app.applyBulkIds();
+  app.applyBulkValues();
 
   return (
     app.el.bulkStatus.textContent.includes('1件は再掲連載回数を超えています') ||
@@ -874,10 +874,10 @@ check('貼り付け件数が少ないとき、後ろの回のIDを消さない',
   const app = setup({ episodeCount: 4 });
 
   app.el.bulkInput.value = '30001\n30002\n30003\n30004';
-  app.applyBulkIds();
+  app.applyBulkValues();
 
   app.el.bulkInput.value = '40001\n40002';
-  app.applyBulkIds();
+  app.applyBulkValues();
 
   const ids = app.state.rows.map((row) => row.articleId);
 
@@ -890,13 +890,130 @@ check('「記事IDをすべて消す」で退避分も消える', () => {
   const app = setup({ episodeCount: 3 });
 
   app.el.bulkInput.value = '30001\n30002\n30003\n30004\n30005';
-  app.applyBulkIds();
+  app.applyBulkValues();
   app.clearArticleIds();
   app.setEpisodeCount(5);
 
   const ids = app.state.rows.map((row) => row.articleId);
 
   return ids.every((id) => id === '') || `→ ${ids.join(',')}`;
+});
+
+check('記事IDと記事タイトルを同時に流し込める', () => {
+  const app = setup({ episodeCount: 3 });
+
+  app.el.bulkInput.value = '30001\n30002\n30003';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目\n三つ目';
+  app.applyBulkValues();
+
+  const got = app.state.rows.map((row) => `${row.articleId}:${row.articleTitle}`);
+  const shown = app.state.rows.map((row) => row.el.titleInput.value);
+
+  return (
+    (got.join(',') === '30001:一つ目,30002:二つ目,30003:三つ目' &&
+      shown.join(',') === '一つ目,二つ目,三つ目') ||
+    `→ ${got.join(',')} / ${shown.join(',')}`
+  );
+});
+
+check('タイトルだけ貼っても記事IDは消えない', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkInput.value = '30001\n30002';
+  app.applyBulkValues();
+
+  app.el.bulkInput.value = '';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目';
+  app.applyBulkValues();
+
+  const got = app.state.rows.map((row) => `${row.articleId}:${row.articleTitle}`);
+
+  return got.join(',') === '30001:一つ目,30002:二つ目' || `→ ${got.join(',')}`;
+});
+
+check('貼り付けたタイトルが次の回の前回記事HTMLに入り、文字数も更新される', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkInput.value = '30001\n30002';
+  app.el.bulkTitleInput.value = '一つ目のタイトル\n二つ目';
+  app.applyBulkValues();
+
+  const html = app.buildPreviousHtmlFor(1);
+  const count = app.state.rows[0].el.titleCount.textContent;
+
+  return (
+    (html.includes('【前回の記事を読む】一つ目のタイトル') && count === '8文字') ||
+    `→ ${html} / ${count}`
+  );
+});
+
+check('タイトルの空行は詰めるので記事IDとずれない', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkTitleInput.value = '\r\n一つ目\r\n\r\n二つ目\r\n';
+  app.applyBulkValues();
+
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return titles.join(',') === '一つ目,二つ目' || `→ ${titles.join(',')}`;
+});
+
+check('回数を超えたタイトルは退避され、回数を増やすと戻る', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkTitleInput.value = '一つ目\n二つ目\n三つ目';
+  app.applyBulkValues();
+  app.setEpisodeCount(3);
+
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return titles.join(',') === '一つ目,二つ目,三つ目' || `→ ${titles.join(',')}`;
+});
+
+check('タイトルの貼り直しでコピー済みが外れる', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkInput.value = '30001\n30002';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目';
+  app.applyBulkValues();
+
+  app.state.rows[1].copiedHtml = app.buildPreviousHtmlFor(1);
+
+  app.el.bulkTitleInput.value = '直した一つ目\n二つ目';
+  app.applyBulkValues();
+
+  return app.state.rows[1].copiedHtml === '' || `→ ${app.state.rows[1].copiedHtml}`;
+});
+
+check('「記事タイトルをすべて消す」はIDを残し、退避分のタイトルも消す', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkInput.value = '30001\n30002';
+  app.el.bulkTitleInput.value = '一つ目\n二つ目\n三つ目';
+  app.applyBulkValues();
+  app.clearArticleTitles();
+  app.setEpisodeCount(3);
+
+  const ids = app.state.rows.map((row) => row.articleId);
+  const titles = app.state.rows.map((row) => row.articleTitle);
+
+  return (
+    (ids.join(',') === '30001,30002,' && titles.every((title) => title === '')) ||
+    `→ ${ids.join(',')} / ${titles.join(',')}`
+  );
+});
+
+check('どちらも空なら反映せず案内を出す', () => {
+  const app = setup({ episodeCount: 2 });
+
+  app.el.bulkInput.value = '   ';
+  app.el.bulkTitleInput.value = '';
+  app.applyBulkValues();
+
+  return (
+    app.el.bulkStatus.textContent === '記事IDか記事タイトルを入力してください' ||
+    `→ ${app.el.bulkStatus.textContent}`
+  );
 });
 
 // ============================================================

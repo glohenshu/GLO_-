@@ -121,8 +121,10 @@ const el = {
   panelNext: document.getElementById('panel-next'),
 
   bulkInput: document.getElementById('bulk-input'),
+  bulkTitleInput: document.getElementById('bulk-title-input'),
   bulkApply: document.getElementById('bulk-apply'),
   bulkClear: document.getElementById('bulk-clear'),
+  bulkTitleClear: document.getElementById('bulk-title-clear'),
   bulkStatus: document.getElementById('bulk-status'),
   prevCount: document.getElementById('prev-count'),
   prevCountMinus: document.getElementById('prev-count-minus'),
@@ -354,11 +356,15 @@ el.prevCountPlus.addEventListener('click', () => {
 });
 
 el.bulkApply.addEventListener('click', () => {
-  applyBulkIds();
+  applyBulkValues();
 });
 
 el.bulkClear.addEventListener('click', () => {
   clearArticleIds();
+});
+
+el.bulkTitleClear.addEventListener('click', () => {
+  clearArticleTitles();
 });
 
 // 記事ID・記事タイトルは行ごとに個別入力もできる。
@@ -1407,58 +1413,65 @@ function buildPreviousArticleHtml(articleId, title) {
   );
 }
 
-// ---- 記事IDの一括貼り付け ----
+// ---- 記事ID・記事タイトルの一括貼り付け ----
+//
+// 新規一括集中アシスタントの①と同じ形。入力欄は①タブにしかないので、
+// あちらの①②の同期にあたる処理はない
 
-function applyBulkIds() {
-  if (!state.rows.length) {
-    setBulkStatus('先に参照元連載を選択してください', true);
-    return;
-  }
-
-  // スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
-  // 区切れないと1行目に全IDが入ってしまうため、どの改行でも分割する
-  const ids = String(el.bulkInput.value || '')
+// スプレッドシートからのコピーは改行が \n / \r\n / \r のいずれにもなる。
+// 区切れないと1行目に全部が入ってしまうため、どの改行でも分割する。
+//
+// 空行は落とす。記事IDと記事タイトルで扱いを変えると、
+// どちらかに空行が混ざったときに2つの列がずれて対応しなくなる
+function splitBulkLines(value) {
+  return String(value || '')
     .split(/[\r\n]+/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
 
-  if (!ids.length) {
-    setBulkStatus('記事IDが入力されていません', true);
+function applyBulkValues() {
+  // ①は参照元が無くても回数を入れれば行ができるので、案内は回数に寄せる
+  if (!state.rows.length) {
+    setBulkStatus('先に回数を入力してください', true);
     return;
   }
 
-  // 行数を超えた分も回数ごとに退避しておく。
-  // 再掲連載回数を増やしたときに貼り直さずに済む
-  ids.forEach((id, index) => {
-    const number = index + 1;
+  const ids = splitBulkLines(el.bulkInput.value);
+  const titles = splitBulkLines(el.bulkTitleInput.value);
 
-    if (number > MAX_EPISODE_COUNT) return;
+  if (!ids.length && !titles.length) {
+    setBulkStatus('記事IDか記事タイトルを入力してください', true);
+    return;
+  }
 
-    state.idStash.set(number, id);
+  if (ids.length) applyBulkColumn(ids, 'articleId', state.idStash, 'input');
 
-    const row = state.rows[index];
-
-    if (!row) return;
-
-    row.articleId = id;
-
-    if (row.el) row.el.input.value = id;
-  });
+  if (titles.length) {
+    applyBulkColumn(titles, 'articleTitle', state.titleStash, 'titleInput');
+    state.rows.forEach((row) => updateTitleCount(row));
+  }
 
   state.rows.forEach((_, index) => updatePrevRow(index));
 
-  const applied = Math.min(ids.length, state.rows.length);
+  const total = state.rows.length;
+  const longest = Math.max(ids.length, titles.length);
 
-  let message = `${applied}件を反映しました`;
+  const parts = [];
 
-  if (ids.length > state.rows.length) {
+  if (ids.length) parts.push(`記事ID ${Math.min(ids.length, total)}件`);
+  if (titles.length) parts.push(`記事タイトル ${Math.min(titles.length, total)}件`);
+
+  let message = `${parts.join('・')}を反映しました`;
+
+  if (longest > total) {
     message +=
-      `（${ids.length - state.rows.length}件は再掲連載回数を超えています。` +
+      `（${longest - total}件は再掲連載回数を超えています。` +
       `回数を増やすと反映されます）`;
-  } else if (ids.length < state.rows.length) {
+  } else if (longest < total) {
     // 貼り付けた件数より後ろの回は書き換えない。
-    // 前に入れたIDが残っていることがあるので「未入力」と決めつけない
-    const rest = state.rows.slice(ids.length);
+    // 前に入れた値が残っていることがあるので「未入力」と決めつけない
+    const rest = state.rows.slice(longest);
     const kept = rest.filter((row) => String(row.articleId || '').trim()).length;
 
     message += kept
@@ -1466,23 +1479,54 @@ function applyBulkIds() {
       : `（残り${rest.length}回は未入力）`;
   }
 
-  setBulkStatus(message, ids.length > state.rows.length);
+  setBulkStatus(message, longest > total);
+}
+
+// 行数を超えた分も回数ごとに退避しておく。
+// 再掲連載回数を増やしたときに貼り直さずに済む
+function applyBulkColumn(values, field, stash, refKey) {
+  values.forEach((value, index) => {
+    const number = index + 1;
+
+    if (number > MAX_EPISODE_COUNT) return;
+
+    stash.set(number, value);
+
+    const row = state.rows[index];
+
+    if (!row) return;
+
+    row[field] = value;
+
+    if (row.el) row.el[refKey].value = value;
+  });
 }
 
 function clearArticleIds() {
-  // 退避してある分（今は表示していない回）も一緒に消す。
-  // 消したつもりのIDが回数を戻したときに復活しないようにする
-  state.idStash.clear();
+  clearBulkColumn('articleId', state.idStash, 'input');
+
+  setBulkStatus('記事IDを消しました');
+}
+
+function clearArticleTitles() {
+  clearBulkColumn('articleTitle', state.titleStash, 'titleInput');
+  state.rows.forEach((row) => updateTitleCount(row));
+
+  setBulkStatus('記事タイトルを消しました');
+}
+
+// 退避してある分（今は表示していない回）も一緒に消す。
+// 消したつもりの値が回数を戻したときに復活しないようにする
+function clearBulkColumn(field, stash, refKey) {
+  stash.clear();
 
   state.rows.forEach((row) => {
-    row.articleId = '';
+    row[field] = '';
 
-    if (row.el) row.el.input.value = '';
+    if (row.el) row.el[refKey].value = '';
   });
 
   state.rows.forEach((_, index) => updatePrevRow(index));
-
-  setBulkStatus('記事IDを消しました');
 }
 
 function setBulkStatus(message, isWarn = false) {
