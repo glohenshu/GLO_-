@@ -77,6 +77,15 @@
           <span id="source-status" class="source-status"></span>
         </div>
 
+        <!-- 書名が同じ過去連載しか自動では拾わない。総集編などはここで探して選ぶ -->
+        <div class="source-search-row">
+          <label for="source-search-input">参照元を探す</label>
+          <input id="source-search-input" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="過去連載の書名の一部">
+          <button type="button" id="source-search-btn" class="copy mini">探す</button>
+          <span id="source-search-status" class="source-status"></span>
+        </div>
+
         <!-- 再掲連載回数。参照元の記事数を初期値にするが、ここで自由に変えられる -->
         <div class="count-row">
           <span class="count-label" id="count-label">再掲連載回数</span>

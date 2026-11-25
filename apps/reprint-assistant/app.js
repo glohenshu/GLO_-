@@ -35,6 +35,9 @@ const state = {
   // 参照元候補そのものが取れなかったときの理由
   sourceError: '',
 
+  // APIの警告。参照元を探して選んだら「過去連載が見つかりません」を外して出し直す
+  warnings: [],
+
   // 参照元の「回数 → 記事」対応表
   sourceByEpisode: new Map(),
 
@@ -107,6 +110,9 @@ const el = {
   seriesProdNo: document.getElementById('series-prodno'),
   sourceSelect: document.getElementById('source-select'),
   sourceStatus: document.getElementById('source-status'),
+  sourceSearchInput: document.getElementById('source-search-input'),
+  sourceSearchBtn: document.getElementById('source-search-btn'),
+  sourceSearchStatus: document.getElementById('source-search-status'),
   countInput: document.getElementById('count-input'),
   countMinus: document.getElementById('count-minus'),
   countPlus: document.getElementById('count-plus'),
@@ -180,10 +186,19 @@ el.candidatesList.addEventListener('click', (event) => {
 });
 
 el.sourceSelect.addEventListener('change', () => {
-  applySourceSelection(el.sourceSelect.value);
-  buildRows();
-  renderPrevTable();
-  renderBottomTable();
+  selectSource(el.sourceSelect.value);
+});
+
+// ---- 参照元を探す ----
+
+el.sourceSearchBtn.addEventListener('click', () => {
+  runSourceSearch();
+});
+
+el.sourceSearchInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    runSourceSearch();
+  }
 });
 
 // ---- 再掲連載回数 ----
@@ -630,9 +645,15 @@ async function fetchReprintData(code = getCategoryCode()) {
     state.sourceError =
       source.status === 'ok' ? '' : String(source.message || '');
 
-    renderWarnings(json.warnings);
+    state.warnings = Array.isArray(json.warnings) ? json.warnings : [];
+
     renderCommon();
     renderSourceCandidates();
+    renderWarnings(state.warnings);
+
+    // 検索欄には今回の書名から元の書名を推して入れておく。押せばすぐ探せる
+    el.sourceSearchInput.value = guessSourceQuery(state.series);
+    setSourceSearchStatus('');
 
     buildRows();
     renderPrevTable();
@@ -664,10 +685,14 @@ function resetSeries() {
   state.sourceCandidates = [];
   state.selectedSource = null;
   state.sourceError = '';
+  state.warnings = [];
   state.sourceByEpisode = new Map();
   state.sourceCount = 0;
 
   renderCountControl();
+
+  el.sourceSearchInput.value = '';
+  setSourceSearchStatus('');
 
   el.warnings.hidden = true;
   el.warningsList.textContent = '';
@@ -686,7 +711,9 @@ function resetSeries() {
 // ------------------------------------------------------------
 
 function renderWarnings(warnings) {
-  const list = Array.isArray(warnings) ? warnings.filter(Boolean) : [];
+  const list = (Array.isArray(warnings) ? warnings.filter(Boolean) : [])
+    // 参照元を探して選んだ後は、もう確認が要らない
+    .filter((warning) => !(state.selectedSource && isSourceMissingWarning(warning)));
 
   el.warningsList.textContent = '';
 
@@ -756,7 +783,13 @@ function renderSheetStatus() {
 // 参照元候補
 // ------------------------------------------------------------
 
-function renderSourceCandidates() {
+// API の「「…」の過去連載が見つかりません」
+function isSourceMissingWarning(warning) {
+  return /の過去連載が見つかりません$/.test(String(warning || ''));
+}
+
+// selectCode を渡すとその候補を選んだ状態にする（探した結果を選ばせるとき）
+function renderSourceCandidates(selectCode = '') {
   el.sourceSelect.textContent = '';
 
   const candidates = state.sourceCandidates;
@@ -789,8 +822,127 @@ function renderSourceCandidates() {
     el.sourceSelect.appendChild(option);
   }
 
-  el.sourceSelect.selectedIndex = 0;
-  applySourceSelection(el.sourceSelect.value);
+  const index = Math.max(
+    0,
+    candidates.findIndex((candidate) => candidate.categoryCode === selectCode)
+  );
+
+  el.sourceSelect.selectedIndex = index;
+  applySourceSelection(candidates[index].categoryCode || '');
+}
+
+// 画面で参照元を選び直したとき。行を作り直し、警告も出し直す
+function selectSource(categoryCode) {
+  applySourceSelection(categoryCode);
+  buildRows();
+  renderPrevTable();
+  renderBottomTable();
+  renderWarnings(state.warnings);
+}
+
+// ------------------------------------------------------------
+// 参照元を探す
+//
+// 自動では書名が同じ過去連載しか拾わない（API の isSameSeriesTitle）。
+//   『ツワブキの咲く場所』総集編ピックアップ（gr2101）→ ツワブキの咲く場所（gr1052）
+// のような連載は候補が0件になるので、書名の一部で記事データ341を引いて選んでもらう。
+// 見つかった候補は自動の候補の上に足し、先頭を選んだ状態にする（確定は人が見て行う）
+// ------------------------------------------------------------
+
+// 検索欄の初期値。『』があればその中身、無ければ［…ピックアップ］を外した書名
+function guessSourceQuery(series) {
+  const title = String((series && series.bookTitle) || '');
+
+  const quoted = title.match(/『([^『』]+)』/);
+
+  if (quoted) return quoted[1].trim();
+
+  return String((series && series.normalizedTitle) || title).trim();
+}
+
+async function runSourceSearch() {
+  if (!state.series) return;
+
+  const text = String(el.sourceSearchInput.value || '').trim();
+
+  if ([...text].length < MIN_TITLE_QUERY_LENGTH) {
+    setSourceSearchStatus('2文字以上で入力してください', true);
+    el.sourceSearchInput.focus();
+    return;
+  }
+
+  // 探している間に別の連載を読み込んだら、結果は捨てる
+  const seriesCode = state.series.categoryCode;
+
+  el.sourceSearchBtn.disabled = true;
+  setSourceSearchStatus('検索中…');
+
+  try {
+    const params = new URLSearchParams({ sourceQ: text, code: seriesCode });
+
+    const response = await fetch(`${API_ENDPOINT}?${params.toString()}`, {
+      cache: 'no-store',
+    });
+
+    const json = await response.json().catch(() => null);
+
+    if (!state.series || state.series.categoryCode !== seriesCode) return;
+
+    if (!response.ok || !json) {
+      setSourceSearchStatus(
+        (json && json.error) || `検索に失敗しました（HTTP ${response.status}）`,
+        true
+      );
+      return;
+    }
+
+    const source = json.source || {};
+    const found = Array.isArray(source.candidates) ? source.candidates : [];
+
+    if (source.status !== 'ok' || !found.length) {
+      setSourceSearchStatus(
+        source.message || `「${text}」に一致する過去連載がありません`,
+        true
+      );
+      return;
+    }
+
+    mergeSourceCandidates(found);
+    renderSourceCandidates(found[0].categoryCode);
+    buildRows();
+    renderPrevTable();
+    renderBottomTable();
+    renderWarnings(state.warnings);
+
+    setSourceSearchStatus(
+      found.length === 1
+        ? '1件見つかりました。参照元連載に設定しました'
+        : `${found.length}件見つかりました。参照元連載から選んでください`
+    );
+  } catch (e) {
+    setSourceSearchStatus(`通信エラー：${String(e.message || e)}`, true);
+  } finally {
+    el.sourceSearchBtn.disabled = false;
+  }
+}
+
+// 探した候補を上に、自動の候補を下に並べる。同じカテゴリコードは1つにする
+function mergeSourceCandidates(found) {
+  const codes = new Set(found.map((candidate) => candidate.categoryCode));
+
+  state.sourceCandidates = [
+    ...found,
+    ...state.sourceCandidates.filter(
+      (candidate) => !codes.has(candidate.categoryCode)
+    ),
+  ];
+
+  state.sourceError = '';
+}
+
+function setSourceSearchStatus(message, isWarn = false) {
+  el.sourceSearchStatus.textContent = message;
+  el.sourceSearchStatus.classList.toggle('warn', Boolean(isWarn));
 }
 
 // 参照元を選び直した時点で、再掲連載回数はその参照元の記事数に戻す。
@@ -836,12 +988,26 @@ function renderSourceStatus() {
     return;
   }
 
-  el.sourceStatus.textContent =
+  const made =
     state.episodeCount === 1
       ? '最終回のみの1行を作成しました'
       : `第1回〜最終回の${state.episodeCount}行を作成しました`;
 
+  // 総集編は元連載からの抜粋で、第N回が元の第N回とは限らない。
+  // ②の「次の記事」は参照元の第N+1回を指すので、そのままでは誤ったリンクになりうる
+  if (isDigestSeries()) {
+    el.sourceStatus.textContent =
+      `${made}。総集編は抜粋のため、回数と②の「次の記事」が元の回と合うか確認してください`;
+    el.sourceStatus.classList.add('warn');
+    return;
+  }
+
+  el.sourceStatus.textContent = made;
   el.sourceStatus.classList.remove('warn');
+}
+
+function isDigestSeries() {
+  return /総集編/.test(String((state.series && state.series.bookTitle) || ''));
 }
 
 // ------------------------------------------------------------

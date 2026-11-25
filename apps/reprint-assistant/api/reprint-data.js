@@ -46,6 +46,10 @@ export default async function handler(req, res) {
   // 書籍名の部分一致で連載候補を出すための検索語
   const searchQuery = String(req.query.q || '').trim();
 
+  // 参照元（記事データ341）を書籍名の部分一致で探すための検索語。
+  // 自動の照合で過去連載が見つからない連載（総集編など）で使う
+  const sourceQuery = String(req.query.sourceQ || '').trim();
+
   // ?summary=1 は診断用。rows を返さず件数と末尾の期間だけ見る
   const summaryOnly = String(req.query.summary || '') === '1';
 
@@ -63,6 +67,23 @@ export default async function handler(req, res) {
       status: 'ok',
       query: searchQuery,
       candidates,
+    });
+  }
+
+  // 参照元を探すときは候補一覧だけ返す。連載情報・シートは取得済みのものを画面が持っている。
+  // code は「今回の連載自身を候補から外す」ためだけに使う
+  if (sourceQuery) {
+    const source = await searchSourceCandidates({
+      base,
+      token: articleToken,
+      query: sourceQuery,
+      excludeCode: categoryCode,
+    });
+
+    return res.status(200).json({
+      status: 'ok',
+      query: sourceQuery,
+      source,
     });
   }
 
@@ -446,14 +467,20 @@ async function fetchRecords({ base, token, appId, query, fields }) {
   return (json && json.records) || [];
 }
 
-// 500件を超えても取得できるようページングする（記事データアプリ用）
-async function fetchAllRecords({ base, token, appId, query, fields }) {
+// 500件を超えても取得できるようページングする（記事データアプリ用）。
+// maxRecords を渡すと、それを超えた時点で取得をやめて truncated を立てる
+async function fetchAllRecords({ base, token, appId, query, fields, maxRecords = Infinity, onTruncate }) {
   const limit = 500;
 
   let offset = 0;
   const allRecords = [];
 
   while (true) {
+    if (allRecords.length > maxRecords) {
+      if (onTruncate) onTruncate();
+      break;
+    }
+
     const records = await fetchRecords({
       base,
       token,
@@ -513,6 +540,74 @@ async function searchSeriesCandidates({ base, token, appId, query }) {
       status: 'error',
       message: String(e.message || e),
       items: [],
+    };
+  }
+}
+
+// ============================================================
+// 参照元を書籍名の部分一致で探す
+//
+// 自動の照合（normalizeSeriesTitle → isSameSeriesTitle）は書名が同じ連載しか拾わない。
+//   『ツワブキの咲く場所』総集編ピックアップ（gr2101） → ツワブキの咲く場所（gr1052）
+// のように［…ピックアップ］の形でない連載は候補が0件になるので、
+// 画面から書名の一部で341を引き、候補を選んでもらう。
+// ここでは書名の一致は確かめない（選ぶのは人）。
+//
+// 「母」のような短い語だと数千件になるので、記事数が上限を超えたら候補を返さず、
+// 書名を詳しくしてもらう。途中までの記事で回数を数えると誤った回数を出すため。
+// この関数は throw しない。失敗の理由は message に入れる
+// ============================================================
+
+const MAX_SOURCE_SEARCH_RECORDS = 2000;
+
+async function searchSourceCandidates({ base, token, query, excludeCode }) {
+  try {
+    if (!base || !token) {
+      throw new Error(
+        '記事データアプリの環境変数（KINTONE_BASE_URL / KINTONE_ARTICLE_API_TOKEN）が未設定です'
+      );
+    }
+
+    let truncated = false;
+
+    const records = await fetchAllRecords({
+      base,
+      token,
+      appId: ARTICLE_APP_ID,
+      fields: ARTICLE_FIELDS,
+      query:
+        `書籍タイトル like "${escapeQueryValue(query)}" ` +
+        `order by 公開日時 asc`,
+      maxRecords: MAX_SOURCE_SEARCH_RECORDS,
+      onTruncate: () => {
+        truncated = true;
+      },
+    });
+
+    if (truncated) {
+      return {
+        status: 'error',
+        message: `「${query}」に当たる記事が多すぎます。書名をもう少し詳しく入れてください`,
+        candidates: [],
+      };
+    }
+
+    const articles = records
+      .map(mapArticle)
+      .filter((article) => !excludeCode || article.categoryCode !== excludeCode);
+
+    const candidates = groupSeriesCandidates(articles);
+
+    return {
+      status: 'ok',
+      message: candidates.length ? '' : `「${query}」に一致する過去連載がありません`,
+      candidates,
+    };
+  } catch (e) {
+    return {
+      status: 'error',
+      message: String(e.message || e),
+      candidates: [],
     };
   }
 }

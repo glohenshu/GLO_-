@@ -167,6 +167,7 @@ const APP_SOURCE =
   applySourceSelection, setEpisodeCount, parseCountInput, clampEpisodeCount,
   getCategoryCode, toCategoryDigits, isCodeQuery, runSearch, renderCandidates,
   fetchReprintData, resetSeries,
+  runSourceSearch, guessSourceQuery, renderWarnings, renderSourceCandidates,
   buildRows, renderPrevTable, renderBottomTable, updatePrevRow,
   applyBulkValues, clearArticleIds, clearArticleTitles,
   buildPreviousHtmlFor, buildPreviousArticleHtml,
@@ -2383,7 +2384,7 @@ let apiQueue = Promise.resolve();
 
 // 402 のレコード1件と、341 の記事 [カテゴリコード, 書籍タイトル, 記事数] から
 // 参照元候補（カテゴリコード → 記事数）を返す
-function runSourceLookup(series, articles) {
+function runSourceLookup(series, articles, options = {}) {
   const job = apiQueue.then(async () => {
     const { default: handler } = await import(API_URL);
 
@@ -2466,7 +2467,9 @@ function runSourceLookup(series, articles) {
         json(body) { this.body = body; return this; },
       };
 
-      await handler({ query: { code: series.code } }, res);
+      await handler({ query: { code: series.code, ...(options.query || {}) } }, res);
+
+      if (options.raw) return res.body;
 
       const found = {};
       for (const c of res.body.source.candidates || []) {
@@ -2548,6 +2551,232 @@ check('今回のカテゴリコード自身は参照元に出さない', () =>
     ]
   ).then((found) => (show(found) === show({ gr297: 3 })) || `→ ${show(found)}`)
 );
+
+
+// ============================================================
+// 参照元を探す（自動で見つからない総集編など）
+// ============================================================
+
+group('参照元を探す');
+
+check('API：書名の一部で探すと、書名が違う過去連載も候補に出す（gr2101 → gr1052）', () =>
+  runSourceLookup(
+    { code: 'gr2101', title: '『ツワブキの咲く場所』総集編ピックアップ' },
+    [
+      ['gr1052', 'ツワブキの咲く場所', 24],
+      ['gr2101', '『ツワブキの咲く場所』総集編ピックアップ', 3],
+    ],
+    { query: { sourceQ: 'ツワブキの咲く場所' }, raw: true }
+  ).then((body) => {
+    const found = {};
+    for (const c of body.source.candidates) found[c.categoryCode] = c.articles.length;
+    return (body.source.status === 'ok' && show(found) === show({ gr1052: 24 })) ||
+      `→ ${body.source.status} ${show(found)}`;
+  })
+);
+
+check('API：自動の照合では総集編の元連載は出ない（従来どおり）', () =>
+  runSourceLookup(
+    { code: 'gr2101', title: '『ツワブキの咲く場所』総集編ピックアップ' },
+    [['gr1052', 'ツワブキの咲く場所', 24]]
+  ).then((found) => (show(found) === show({})) || `→ ${show(found)}`)
+);
+
+check('API：当たる記事が多すぎるときは途中の回数で候補を作らない', () =>
+  runSourceLookup(
+    { code: 'gr2101', title: '『母』総集編ピックアップ' },
+    [['gr1', '母の話', 2001]],
+    { query: { sourceQ: '母の' }, raw: true }
+  ).then((body) =>
+    (body.source.status === 'error' &&
+      body.source.candidates.length === 0 &&
+      body.source.message.includes('多すぎます')) ||
+    `→ ${body.source.status} ${body.source.candidates.length} ${body.source.message}`
+  )
+);
+
+check('API：0件なら理由を返す', () =>
+  runSourceLookup(
+    { code: 'gr2101', title: '『ツワブキの咲く場所』総集編ピックアップ' },
+    [['gr1052', 'ツワブキの咲く場所', 2]],
+    { query: { sourceQ: 'サザンカ' }, raw: true }
+  ).then((body) =>
+    (body.source.status === 'ok' && body.source.message.includes('ありません')) ||
+    `→ ${body.source.status} ${body.source.message}`
+  )
+);
+
+check('検索欄の初期値：『』があればその中身', () => {
+  const app = loadApp();
+  const got = app.guessSourceQuery({ bookTitle: '『ツワブキの咲く場所』総集編ピックアップ' });
+  return got === 'ツワブキの咲く場所' || `→ ${got}`;
+});
+
+check('検索欄の初期値：『』が無ければピックアップ表記を外した書名', () => {
+  const app = loadApp();
+  const got = app.guessSourceQuery({
+    bookTitle: '夫 失格［イチオシ連載ピックアップ］',
+    normalizedTitle: '夫 失格',
+  });
+  return got === '夫 失格' || `→ ${got}`;
+});
+
+const DIGEST_SERIES = {
+  recordId: '2300',
+  categoryCode: 'gr2101',
+  bookTitle: '『ツワブキの咲く場所』総集編ピックアップ',
+  normalizedTitle: '『ツワブキの咲く場所』総集編ピックアップ',
+  firstDeliveryAt: '2026-12-07T03:00:00Z',
+  productionNo: '22836',
+};
+
+const MISSING_WARNING = '「『ツワブキの咲く場所』総集編ピックアップ」の過去連載が見つかりません';
+
+// 自動の候補が0件の状態（gr2101 を読み込んだ直後）を作る
+function setupNoSource(fetch) {
+  const app = loadApp({ fetch });
+  const { state } = app;
+
+  state.series = DIGEST_SERIES;
+  state.sourceCandidates = [];
+  state.warnings = [MISSING_WARNING];
+
+  app.renderCommon();
+  app.renderSourceCandidates();
+  app.renderWarnings(state.warnings);
+  app.buildRows();
+  app.renderPrevTable();
+  app.renderBottomTable();
+
+  return app;
+}
+
+function sourceSearchResponse(count = 24) {
+  const articles = makeArticles(count).map((a) => ({
+    ...a,
+    categoryCode: 'gr1052',
+    bookTitle: 'ツワブキの咲く場所',
+  }));
+
+  return {
+    status: 'ok',
+    query: 'ツワブキの咲く場所',
+    source: {
+      status: 'ok',
+      message: '',
+      candidates: [
+        { categoryCode: 'gr1052', bookTitle: 'ツワブキの咲く場所', count, articles },
+      ],
+    },
+  };
+}
+
+check('探した過去連載を参照元に設定し、行を作る', () => {
+  const urls = [];
+  const app = setupNoSource((url) => {
+    urls.push(String(url));
+    return Promise.resolve(jsonResponse(sourceSearchResponse(24)));
+  });
+
+  const before = app.el.warnings.hidden === false && app.state.rows.length === 0;
+
+  app.el.sourceSearchInput.value = 'ツワブキの咲く場所';
+
+  return app.runSourceSearch().then(() => {
+    const url = urls[0] || '';
+    const ok =
+      before &&
+      url.includes('sourceQ=' + encodeURIComponent('ツワブキの咲く場所')) &&
+      url.includes('code=gr2101') &&
+      app.state.selectedSource &&
+      app.state.selectedSource.categoryCode === 'gr1052' &&
+      app.state.rows.length === 24 &&
+      app.el.sourceSelect.disabled === false &&
+      // 「過去連載が見つかりません」はもう出さない
+      app.el.warnings.hidden === true;
+
+    return ok || `→ ${url} / ${app.state.selectedSource && app.state.selectedSource.categoryCode} / ${app.state.rows.length}行 / 警告表示=${!app.el.warnings.hidden}`;
+  });
+});
+
+check('総集編を参照元にしたら、回の対応を確かめるよう注意を出す', () => {
+  const app = setupNoSource(() => Promise.resolve(jsonResponse(sourceSearchResponse(24))));
+
+  app.el.sourceSearchInput.value = 'ツワブキの咲く場所';
+
+  return app.runSourceSearch().then(() => {
+    const text = app.el.sourceStatus.textContent;
+    return (text.includes('総集編') && app.el.sourceStatus.className.includes('warn')) ||
+      `→ ${text}`;
+  });
+});
+
+check('見つからなければ理由を出し、参照元は未選択のまま', () => {
+  const app = setupNoSource(() =>
+    Promise.resolve(jsonResponse({
+      status: 'ok',
+      source: { status: 'ok', message: '「サザンカ」に一致する過去連載がありません', candidates: [] },
+    }))
+  );
+
+  app.el.sourceSearchInput.value = 'サザンカ';
+
+  return app.runSourceSearch().then(() => {
+    const text = app.el.sourceSearchStatus.textContent;
+    return (
+      text.includes('ありません') &&
+      app.el.sourceSearchStatus.className.includes('warn') &&
+      app.state.selectedSource === null &&
+      app.el.warnings.hidden === false
+    ) || `→ ${text} / ${app.state.selectedSource}`;
+  });
+});
+
+check('1文字では問い合わせない', () => {
+  const urls = [];
+  const app = setupNoSource((url) => {
+    urls.push(url);
+    return Promise.resolve(jsonResponse(sourceSearchResponse()));
+  });
+
+  app.el.sourceSearchInput.value = '母';
+
+  return Promise.resolve(app.runSourceSearch()).then(() =>
+    (urls.length === 0 && app.el.sourceSearchStatus.textContent.includes('2文字')) ||
+    `→ ${urls.length} / ${app.el.sourceSearchStatus.textContent}`
+  );
+});
+
+check('探した候補は自動の候補の上に足し、自動の候補も残す', () => {
+  const app = setup({
+    fetch: () => Promise.resolve(jsonResponse(sourceSearchResponse(5))),
+  });
+
+  app.el.sourceSearchInput.value = 'ツワブキ';
+
+  return app.runSourceSearch().then(() => {
+    const codes = app.state.sourceCandidates.map((c) => c.categoryCode).join(',');
+    return (codes === 'gr1052,gr1334' && app.state.selectedSource.categoryCode === 'gr1052') ||
+      `→ ${codes}`;
+  });
+});
+
+check('探している間に別の連載を読み込んだら結果を捨てる', () => {
+  let resolveFetch;
+  const app = setupNoSource(() => new Promise((resolve) => { resolveFetch = resolve; }));
+
+  app.el.sourceSearchInput.value = 'ツワブキの咲く場所';
+
+  const job = app.runSourceSearch();
+
+  app.state.series = { ...DIGEST_SERIES, categoryCode: 'gr2102' };
+  resolveFetch(jsonResponse(sourceSearchResponse(24)));
+
+  return job.then(() =>
+    (app.state.selectedSource === null && app.state.sourceCandidates.length === 0) ||
+    `→ ${app.state.sourceCandidates.length}`
+  );
+});
 
 // ============================================================
 // 結果

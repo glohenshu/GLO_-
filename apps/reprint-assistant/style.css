@@ -446,6 +446,37 @@ a:focus-visible {
 
 .source-status.warn { color: var(--warn); font-weight: 600; }
 
+/* ---- 参照元を探す ---- */
+
+.source-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.source-search-row label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--faint);
+}
+
+#source-search-input {
+  width: 260px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+#source-search-input:focus { border-color: var(--accent); }
+
 /* ---- 再掲連載回数 ---- */
 
 .count-row {
